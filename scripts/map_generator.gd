@@ -16,6 +16,8 @@ extends Node2D
 @export var pond_count: int = 2
 @export_range(0.0, 0.2) var tree_density: float = 0.03
 @export_range(0.0, 0.3) var decor_density: float = 0.06
+## Goblins spawned when the game starts (not in the editor)
+@export var goblin_count: int = 4
 
 const SOURCE_ID := 0
 
@@ -74,6 +76,12 @@ var _tree_hits := {} # tree cell -> hits so far
 
 var _rng := RandomNumberGenerator.new()
 var _blocked := {} # cells that already have a path, water or object
+
+
+func _ready() -> void:
+	if Engine.is_editor_hint():
+		return
+	_spawn_goblins()
 
 
 func generate() -> void:
@@ -258,3 +266,39 @@ func try_chop(world_pos: Vector2) -> ChopResult:
 				decor.set_cell(tree_cell + Vector2i(0, size.y - 1), SOURCE_ID, STUMP)
 				return ChopResult.FELLED
 	return ChopResult.NOTHING
+
+
+func _spawn_goblins() -> void:
+	var ground := get_node_or_null("Ground") as TileMapLayer
+	var decor := get_node_or_null("Decor") as TileMapLayer
+	var canopy := get_node_or_null("Canopy") as TileMapLayer
+	var player := get_node_or_null("Player") as Node2D
+	if ground == null or decor == null:
+		return
+	var goblin_script := load("res://scripts/goblin.gd")
+	var area := ground.get_used_rect()
+	var spawned := 0
+	for attempt in 500:
+		if spawned >= goblin_count:
+			break
+		var cell := Vector2i(
+			randi_range(area.position.x + 1, area.end.x - 2),
+			randi_range(area.position.y + 1, area.end.y - 2))
+		var ground_tile := ground.get_cell_atlas_coords(cell)
+		if WATER_TILES.has(ground_tile) or ground_tile == Vector2i(-1, -1):
+			continue
+		if decor.get_cell_source_id(cell) != -1:
+			continue
+		if canopy and canopy.get_cell_source_id(cell) != -1:
+			continue
+		var pos := ground.to_global(ground.map_to_local(cell))
+		if player and pos.distance_to(player.global_position) < 150.0:
+			continue # don't spawn right next to the player
+		var goblin := CharacterBody2D.new()
+		goblin.set_script(goblin_script)
+		goblin.name = "Goblin%d" % (spawned + 1)
+		goblin.position = to_local(pos)
+		add_child(goblin)
+		if canopy:
+			move_child(goblin, canopy.get_index()) # draw goblins under the tree tops
+		spawned += 1

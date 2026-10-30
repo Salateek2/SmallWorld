@@ -9,6 +9,7 @@ extends CharacterBody2D
 ## Tools always work on the tile in front of the character (left or right, the way it faces).
 ## Mouse wheel or +/- zooms the camera in and out.
 ## E at the market counter opens the shop; E next to your bed sleeps until morning.
+## I or Tab opens the inventory.
 
 enum Hair { NONE, BOWL, CURLY, LONG, MOP, SHORT, SPIKEY }
 enum Tool { AXE, HOE, SEEDS, WATER, SWORD, ROD }
@@ -148,6 +149,10 @@ func _physics_process(delta: float) -> void:
 	if _in_menu:
 		velocity = Vector2.ZERO
 		_play("idle")
+		return
+
+	if Input.is_action_just_pressed("inventory") and not _busy and _fishing == Fishing.NONE:
+		_open_menu("res://scripts/inventory.gd")
 		return
 
 	_handle_tool_keys()
@@ -433,22 +438,27 @@ func _sleep(passed_out: bool) -> void:
 
 
 func _open_shop() -> void:
+	_open_menu("res://scripts/shop.gd")
+
+
+## Opens a menu window (shop, inventory). Time stands still while it's open.
+func _open_menu(script_path: String) -> void:
 	var clock := _clock()
 	if clock:
-		clock.paused = true # time stands still while shopping
+		clock.paused = true
 	_in_menu = true
-	var shop := CanvasLayer.new()
-	shop.set_script(load("res://scripts/shop.gd"))
-	shop.player = self
-	shop.closed.connect(_on_shop_closed)
-	add_child(shop)
+	var menu := CanvasLayer.new()
+	menu.set_script(load(script_path))
+	menu.player = self
+	menu.closed.connect(_on_menu_closed)
+	add_child(menu)
 
 
-func _on_shop_closed() -> void:
+func _on_menu_closed() -> void:
 	var clock := _clock()
 	if clock:
 		clock.paused = false
-	# Wait a moment so the E that closed the shop doesn't open it again
+	# Wait a moment so the key that closed the menu doesn't open it again
 	await get_tree().create_timer(0.2).timeout
 	_in_menu = false
 
@@ -552,6 +562,7 @@ func _setup_input() -> void:
 		"tool_5": [KEY_5, KEY_KP_5],
 		"tool_6": [KEY_6, KEY_KP_6],
 		"next_tool": [KEY_Q],
+		"inventory": [KEY_I, KEY_TAB],
 		"zoom_in": [KEY_EQUAL, KEY_KP_ADD],
 		"zoom_out": [KEY_MINUS, KEY_KP_SUBTRACT],
 	}
@@ -825,7 +836,5 @@ func _update_hotbar() -> void:
 
 
 func _update_hud() -> void:
-	var text := "HP: %d / %d    Coins: %d    Wood: %d" % [maxi(hp, 0), max_hp, coins, wood]
-	for crop_type in crops:
-		text += "    %s: %d" % [crop_type.capitalize(), crops[crop_type]]
-	_hud_label.text = text
+	# Crops, fish and wood are listed in the inventory (I / Tab)
+	_hud_label.text = "HP: %d / %d    Coins: %d" % [maxi(hp, 0), max_hp, coins]

@@ -20,7 +20,10 @@ const ANIMATIONS := {
 	"idle": "IDLE",
 	"walk": "WALKING",
 	"run": "RUN",
+	"axe": "AXE",
 }
+const ONE_SHOT := ["axe"] # animations that play once instead of looping
+const WOOD_PER_TREE := 3
 
 const HAIR_PREFIX := {
 	Hair.BOWL: "bowlhair", Hair.CURLY: "curlyhair", Hair.LONG: "longhair",
@@ -28,6 +31,10 @@ const HAIR_PREFIX := {
 }
 
 var _layers: Array[AnimatedSprite2D] = []
+var _facing := 1.0 # 1 = right, -1 = left
+var _busy := false # true while swinging the axe
+var wood := 0
+var _wood_label: Label
 
 
 func _ready() -> void:
@@ -35,12 +42,22 @@ func _ready() -> void:
 	_build_sprite_layers()
 	_build_collision()
 	_build_camera()
+	_build_hud()
+	_layers[0].animation_finished.connect(_on_animation_finished)
 	if global_position == Vector2.ZERO:
 		global_position = Vector2(80, 330) # near the road of the generated map
 	_play("idle")
 
 
 func _physics_process(_delta: float) -> void:
+	if _busy:
+		velocity = Vector2.ZERO
+		return
+	if Input.is_action_just_pressed("use") and _layers[0].sprite_frames.has_animation("axe"):
+		_busy = true
+		_play("axe")
+		return
+
 	var direction := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var running := Input.is_action_pressed("run")
 	velocity = direction * (run_speed if running else walk_speed)
@@ -51,14 +68,30 @@ func _physics_process(_delta: float) -> void:
 	else:
 		_play("run" if running else "walk")
 		if direction.x != 0.0:
+			_facing = signf(direction.x)
 			for layer in _layers:
-				layer.flip_h = direction.x < 0.0
+				layer.flip_h = _facing < 0.0
 
 
 func _play(anim: String) -> void:
 	for layer in _layers:
-		if layer.sprite_frames.has_animation(anim) and layer.animation != anim:
+		if layer.sprite_frames.has_animation(anim) and (layer.animation != anim or not layer.is_playing()):
 			layer.play(anim)
+
+
+func _on_animation_finished() -> void:
+	if _layers[0].animation != "axe":
+		return
+	_busy = false
+	# The spot just in front of the character, at foot level
+	var target := global_position + Vector2(_facing * 12.0, 4.0)
+	var world := get_parent()
+	if world.has_method("try_chop"):
+		var result: int = world.try_chop(target)
+		if result == 2: # tree felled
+			wood += WOOD_PER_TREE
+			_wood_label.text = "Wood: %d" % wood
+	_play("idle")
 
 
 # --- Setup -----------------------------------------------------------------
@@ -71,6 +104,7 @@ func _setup_input() -> void:
 		"move_left": [KEY_A, KEY_LEFT],
 		"move_right": [KEY_D, KEY_RIGHT],
 		"run": [KEY_SHIFT],
+		"use": [KEY_E, KEY_SPACE],
 	}
 	for action in keys:
 		if InputMap.has_action(action):
@@ -108,7 +142,7 @@ func _load_frames(prefix: String) -> SpriteFrames:
 		var count := texture.get_width() / FRAME_SIZE.x
 		frames.add_animation(anim)
 		frames.set_animation_speed(anim, FPS)
-		frames.set_animation_loop(anim, true)
+		frames.set_animation_loop(anim, not ONE_SHOT.has(anim))
 		for i in count:
 			var atlas := AtlasTexture.new()
 			atlas.atlas = texture
@@ -142,3 +176,15 @@ func _build_camera() -> void:
 	camera.position_smoothing_enabled = true
 	add_child(camera)
 	camera.make_current()
+
+
+func _build_hud() -> void:
+	var hud := CanvasLayer.new()
+	_wood_label = Label.new()
+	_wood_label.text = "Wood: 0"
+	_wood_label.position = Vector2(16, 12)
+	_wood_label.add_theme_font_size_override("font_size", 24)
+	_wood_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_wood_label.add_theme_constant_override("outline_size", 6)
+	hud.add_child(_wood_label)
+	add_child(hud)

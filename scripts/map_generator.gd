@@ -65,6 +65,13 @@ const COLLISION_RECTS := {
 	Vector2i(29, 3): Rect2(3, 2, 6, 6), Vector2i(30, 3): Rect2(3, 2, 6, 6),
 }
 
+enum ChopResult { NOTHING, HIT, FELLED }
+const CHOPPABLE := [3, 4] # indices in BIG_OBJECTS: the two pines
+const STUMP := Vector2i(31, 5)
+const HITS_TO_CHOP := 3
+
+var _tree_hits := {} # tree cell -> hits so far
+
 var _rng := RandomNumberGenerator.new()
 var _blocked := {} # cells that already have a path, water or object
 
@@ -212,3 +219,42 @@ func _near_blocked(cell: Vector2i, margin: int) -> bool:
 			if _blocked.has(cell + Vector2i(x, y)):
 				return true
 	return false
+
+
+# --- Gameplay ---------------------------------------------------------------
+
+## Called by the player when swinging the axe. world_pos = the spot in front of the player.
+func try_chop(world_pos: Vector2) -> ChopResult:
+	var decor := get_node_or_null("Decor") as TileMapLayer
+	var canopy := get_node_or_null("Canopy") as TileMapLayer
+	if decor == null:
+		return ChopResult.NOTHING
+	if canopy == null:
+		canopy = decor
+
+	var center := decor.local_to_map(decor.to_local(world_pos))
+	for dy in [0, -1, 1]:
+		for dx in [0, -1, 1]:
+			var cell: Vector2i = center + Vector2i(dx, dy)
+			var atlas := decor.get_cell_atlas_coords(cell)
+			for i in CHOPPABLE:
+				var obj: Dictionary = BIG_OBJECTS[i]
+				var origin: Vector2i = obj["origin"]
+				var size: Vector2i = obj["size"]
+				var offset := atlas - origin
+				# Only the trunk (bottom row) of a pine counts as a hit
+				if offset.y != size.y - 1 or offset.x < 0 or offset.x >= size.x:
+					continue
+				var tree_cell := cell - offset
+				_tree_hits[tree_cell] = _tree_hits.get(tree_cell, 0) + 1
+				if _tree_hits[tree_cell] < HITS_TO_CHOP:
+					return ChopResult.HIT
+				_tree_hits.erase(tree_cell)
+				for ox in size.x:
+					for oy in size.y:
+						var c := tree_cell + Vector2i(ox, oy)
+						decor.erase_cell(c)
+						canopy.erase_cell(c)
+				decor.set_cell(tree_cell + Vector2i(0, size.y - 1), SOURCE_ID, STUMP)
+				return ChopResult.FELLED
+	return ChopResult.NOTHING

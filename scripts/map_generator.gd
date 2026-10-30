@@ -136,6 +136,10 @@ enum ChopResult { NOTHING, HIT, FELLED }
 const CHOPPABLE := PINES
 const STUMP := Vector2i(31, 5)
 const HITS_TO_CHOP := 3
+## The creator's shake animation for the tall pine (4 frames, 28 px wide). Its pixels match
+## the tileset pine exactly when drawn 2 px right and 1 px up from the tree's top-left.
+const PINE_SHAKE := "res://assets/Sunnyside_World_Assets/Elements/Plants/spr_deco_tree_02_strip4.png"
+const PINE_SHAKE_OFFSET := Vector2(2, -1)
 # Small decor the sword can slash away: small bushes, flowers, mushroom (not rocks/stumps)
 const CUTTABLE: Array[Vector2i] = [
 	Vector2i(27, 2), Vector2i(28, 2), Vector2i(29, 2), Vector2i(30, 2),
@@ -619,6 +623,7 @@ func try_chop(world_pos: Vector2) -> ChopResult:
 				var tree_cell := cell - offset
 				_tree_hits[tree_cell] = _tree_hits.get(tree_cell, 0) + 1
 				if _tree_hits[tree_cell] < HITS_TO_CHOP:
+					_shake_tree(decor, canopy, tree_cell, i)
 					return ChopResult.HIT
 				_tree_hits.erase(tree_cell)
 				for ox in size.x:
@@ -629,6 +634,68 @@ func try_chop(world_pos: Vector2) -> ChopResult:
 				decor.set_cell(tree_cell + Vector2i(0, size.y - 1), SOURCE_ID, STUMP)
 				return ChopResult.FELLED
 	return ChopResult.NOTHING
+
+
+## Plays a shake on a tree that was hit. Tiles can't move, so the tree's tiles are
+## swapped for a sprite while it shakes, then put back.
+func _shake_tree(decor: TileMapLayer, canopy: TileMapLayer, tree_cell: Vector2i, index: int) -> void:
+	var obj: Dictionary = BIG_OBJECTS[index]
+	var size: Vector2i = obj["size"]
+	var origin: Vector2i = obj["origin"]
+	var top_left := decor.map_to_local(tree_cell) - Vector2(8, 8) # tree's top-left pixel
+	var shaker: Node2D
+	var duration := 0.5
+	if origin == BIG_OBJECTS[4]["origin"]:
+		# Tall pine: the real animation from the pack, wiggling back and forth
+		var strip: Texture2D = load(PINE_SHAKE)
+		var frames := SpriteFrames.new()
+		frames.set_animation_loop("default", false)
+		frames.set_animation_speed("default", 14.0)
+		for f in [1, 2, 3, 2, 1, 2, 3, 0]:
+			var atlas := AtlasTexture.new()
+			atlas.atlas = strip
+			atlas.region = Rect2(f * 28, 0, 28, strip.get_height())
+			frames.add_frame("default", atlas)
+		var anim := AnimatedSprite2D.new()
+		anim.sprite_frames = frames
+		anim.centered = false
+		anim.position = top_left + PINE_SHAKE_OFFSET
+		anim.play()
+		shaker = anim
+		duration = frames.get_frame_count("default") / 14.0
+	else:
+		# Small pine: no animation in the pack, so lean it left and right from the trunk
+		var sprite := Sprite2D.new()
+		var atlas := AtlasTexture.new()
+		atlas.atlas = decor.tile_set.get_source(SOURCE_ID).texture
+		atlas.region = Rect2(Vector2(origin * 16), Vector2(size * 16))
+		sprite.texture = atlas
+		sprite.centered = false
+		sprite.offset = Vector2(-size.x * 8, -size.y * 16) # pivot at the bottom middle
+		shaker = Node2D.new()
+		shaker.add_child(sprite)
+		shaker.position = top_left + Vector2(size.x * 8, size.y * 16)
+		var tween := shaker.create_tween()
+		for lean in [0.12, -0.1, 0.06, -0.03, 0.0]:
+			tween.tween_property(shaker, "skew", lean, duration / 5.0)
+
+	# Hide the tiles, show the shaking tree in the same place (above the player, like tree tops)
+	var saved := {}
+	for ox in size.x:
+		for oy in size.y:
+			var c := tree_cell + Vector2i(ox, oy)
+			var layer: TileMapLayer = decor if oy == size.y - 1 else canopy
+			saved[c] = [layer, layer.get_cell_atlas_coords(c)]
+			layer.erase_cell(c)
+	shaker.position = to_local(decor.to_global(shaker.position))
+	add_child(shaker)
+	move_child(shaker, canopy.get_index() + 1 if canopy != decor else get_child_count() - 1)
+	await get_tree().create_timer(duration).timeout
+	for c in saved:
+		# Put the tiles back (unless the tree was cut down in the meantime)
+		if saved[c][0].get_cell_source_id(c) == -1:
+			saved[c][0].set_cell(c, SOURCE_ID, saved[c][1])
+	shaker.queue_free()
 
 
 ## Called by the player's sword. Removes small decor on that tile; true if something was cut.

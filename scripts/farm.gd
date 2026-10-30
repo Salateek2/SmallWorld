@@ -22,11 +22,13 @@ const RIPE := STAGES - 1
 
 var highlight_cell := Vector2i(-1, -1) ## the tile the player is aiming at (outlined)
 var show_highlight := false
-var highlight_ok := true ## green outline if the current tool works there, red if not
+var highlight_ok := true ## normal gold brackets if the current tool works there, red if not
 
 var _ground: TileMapLayer
 var _soil_dry: Texture2D
 var _soil_wet: Texture2D
+var _corners := {} # "tl", "tr", "bl", "br" -> the pack's gold bracket textures
+var _time := 0.0
 var _plots := {} # cell -> {soil: Sprite2D, crop: Sprite2D or null, type, stage, wet, grown}
 
 
@@ -35,10 +37,13 @@ func _ready() -> void:
 	transform = _ground.transform # same space as the tiles, even if the layer is moved/scaled
 	_soil_dry = load(CROPS_DIR + "soil_00.png")
 	_soil_wet = load(CROPS_DIR + "soil_01.png")
+	for corner in ["tl", "tr", "bl", "br"]:
+		_corners[corner] = load("res://assets/Sunnyside_World_Assets/UI/selectbox_%s.png" % corner)
 
 
-func _process(_delta: float) -> void:
-	queue_redraw() # keeps the aim outline in sync with the player
+func _process(delta: float) -> void:
+	_time += delta
+	queue_redraw() # keeps the aim brackets in sync with the player and bouncing
 
 
 ## Called by the clock every morning: watered crops grow, then all soil dries.
@@ -59,9 +64,15 @@ func on_new_day(_day: int) -> void:
 func _draw() -> void:
 	if not show_highlight:
 		return
-	var rect := Rect2(_ground.map_to_local(highlight_cell) - Vector2(7, 7), Vector2(14, 14))
-	var color := Color(0.6, 1.0, 0.4) if highlight_ok else Color(1.0, 0.35, 0.3)
-	draw_rect(rect, color, false, 2.0)
+	# Gold corner brackets around the tile, bouncing out by a pixel and back
+	var tile := Rect2(_ground.map_to_local(highlight_cell) - Vector2(8, 8), Vector2(16, 16))
+	var d := 3.0 + (1.0 if fmod(_time, 0.9) < 0.45 else 0.0)
+	var tint := Color.WHITE if highlight_ok else Color(1.0, 0.4, 0.4)
+	var size: Vector2 = _corners["tl"].get_size()
+	draw_texture(_corners["tl"], tile.position + Vector2(-d, -d), tint)
+	draw_texture(_corners["tr"], Vector2(tile.end.x - size.x + d, tile.position.y - d), tint)
+	draw_texture(_corners["bl"], Vector2(tile.position.x - d, tile.end.y - size.y + d), tint)
+	draw_texture(_corners["br"], tile.end - size + Vector2(d, d), tint)
 
 
 ## World position -> tile coordinates of the Ground layer.

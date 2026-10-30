@@ -15,6 +15,8 @@ enum Hair { NONE, BOWL, CURLY, LONG, MOP, SHORT, SPIKEY }
 enum Tool { AXE, HOE, SEEDS, WATER, SWORD, ROD }
 
 const Farm := preload("res://scripts/farm.gd")
+const UIStyle := preload("res://scripts/ui_style.gd")
+const SelectCursor := preload("res://scripts/select_cursor.gd")
 
 @export var hair: Hair = Hair.SHORT
 @export var show_tools: bool = true
@@ -78,7 +80,7 @@ const ALERT_ICON := "res://assets/Sunnyside_World_Assets/UI/expression_alerted.p
 # mirrored when facing left. Any of these spots being water is enough to fish.
 const CAST_SPOTS: Array[Vector2] = [Vector2(28, 26), Vector2(20, 20), Vector2(32, 16), Vector2(24, 32)]
 # Frame where the tool touches the ground / target: the effect happens there, not at the end
-const IMPACT_FRAME := {"dig": 4, "water": 2, "doing": 4, "attack": 5}
+const IMPACT_FRAME := {"dig": 4, "water": 2, "doing": 4, "attack": 5, "axe": 6}
 
 const HAIR_PREFIX := {
 	Hair.BOWL: "bowlhair", Hair.CURLY: "curlyhair", Hair.LONG: "longhair",
@@ -102,6 +104,7 @@ var _target_enemy: Node2D
 var _hud_label: Label
 var _hit_done := false # the current attack already landed
 var _hotbar_slots: Array[PanelContainer] = []
+var _hotbar_cursor: Control # gold corner brackets on the selected tool
 var _tool_label: Label
 var _camera: Camera2D
 var _location_label: Label
@@ -241,6 +244,8 @@ func _on_frame_changed() -> void:
 func _apply_tool(anim: String) -> void:
 	var farm := _farm()
 	match anim:
+		"axe":
+			_chop()
 		"dig":
 			if farm:
 				farm.till(_aim_point())
@@ -266,8 +271,6 @@ func _on_action_done(anim: String) -> void:
 		_hit_done = true
 		_apply_tool(anim)
 	match anim:
-		"axe":
-			_chop()
 		"cast":
 			# The line is in the water: hold the last frame and wait for a bite
 			_fishing = Fishing.WAITING
@@ -765,7 +768,7 @@ func _check_location() -> void:
 
 
 func _build_hotbar(hud: CanvasLayer) -> void:
-	# A column at the bottom center: tool name above a row of 4 slots
+	# A column at the bottom center: tool name above a dark-brown bar of tool slots
 	var column := VBoxContainer.new()
 	column.anchor_left = 0.5
 	column.anchor_right = 0.5
@@ -784,13 +787,18 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 	_tool_label.add_theme_constant_override("outline_size", 6)
 	column.add_child(_tool_label)
 
+	var bar := PanelContainer.new()
+	bar.add_theme_stylebox_override("panel", UIStyle.nine("dt", 3, 10))
+	bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	column.add_child(bar)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 8)
-	column.add_child(row)
+	row.add_theme_constant_override("separation", 10)
+	bar.add_child(row)
 	for i in Tool.size():
 		var slot := PanelContainer.new()
-		slot.custom_minimum_size = Vector2(64, 64)
+		slot.custom_minimum_size = Vector2(60, 60)
+		slot.add_theme_stylebox_override("panel", UIStyle.nine("lt", 3, 9))
 		var icon := TextureRect.new()
 		icon.name = "Icon"
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -801,14 +809,16 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 		slot.add_child(icon)
 		var number := Label.new()
 		number.text = str(i + 1)
-		number.add_theme_font_size_override("font_size", 14)
-		number.add_theme_color_override("font_outline_color", Color.BLACK)
-		number.add_theme_constant_override("outline_size", 4)
+		number.add_theme_font_size_override("font_size", 13)
+		number.add_theme_color_override("font_color", Color(0.24, 0.16, 0.12))
 		number.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		number.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		slot.add_child(number)
 		row.add_child(slot)
 		_hotbar_slots.append(slot)
+	_hotbar_cursor = SelectCursor.new()
+	_hotbar_cursor.outset = 15 # the slot's 9 px padding + 6 px outside its edge
+	_hotbar_slots[0].add_child(_hotbar_cursor)
 
 
 func _update_hotbar() -> void:
@@ -818,14 +828,8 @@ func _update_hotbar() -> void:
 	var seed_icon := _hotbar_slots[Tool.SEEDS].get_node("Icon") as TextureRect
 	seed_icon.texture = Farm.crop_texture(seed_type, Farm.STAGES)
 	seed_icon.modulate.a = 1.0 if seed_count > 0 else 0.35 # faded when you have none
-	for i in _hotbar_slots.size():
-		var style := StyleBoxFlat.new()
-		style.bg_color = Color(0.15, 0.1, 0.08, 0.75)
-		style.set_corner_radius_all(6)
-		style.set_border_width_all(3)
-		style.border_color = Color(1.0, 0.85, 0.4) if i == tool else Color(0.4, 0.32, 0.25)
-		style.set_content_margin_all(8)
-		_hotbar_slots[i].add_theme_stylebox_override("panel", style)
+	if _hotbar_cursor.get_parent() != _hotbar_slots[tool]:
+		_hotbar_cursor.reparent(_hotbar_slots[tool], false)
 	if tool == Tool.SEEDS:
 		if seed_count > 0:
 			_tool_label.text = "%s seeds x%d  (press 3 to change)" % [seed_type.capitalize(), seed_count]

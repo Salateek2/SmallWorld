@@ -8,6 +8,8 @@ extends CanvasLayer
 signal closed
 
 const Farm := preload("res://scripts/farm.gd")
+const UIStyle := preload("res://scripts/ui_style.gd")
+const SelectCursor := preload("res://scripts/select_cursor.gd")
 const UI := "res://assets/Sunnyside_World_Assets/UI/"
 const CROPS := "res://assets/Sunnyside_World_Assets/Elements/Crops/"
 const PIXEL := 4 # UI art is drawn 4x bigger
@@ -38,8 +40,7 @@ var _grid: GridContainer
 var _page_label: Label
 var _arrow_left: TextureButton
 var _arrow_right: TextureButton
-var _cursor: Control
-var _cursor_tween: Tween
+var _cursor: Control # gold corner brackets around the selected slot
 # info card
 var _info_icon: TextureRect
 var _info_name: Label
@@ -216,6 +217,7 @@ func _update_selection() -> void:
 	else:
 		var slot: Control = _grid.get_child(slot_index)
 		_cursor.reparent(slot, false)
+		_cursor.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		_cursor.visible = true
 
 	# Info card
@@ -433,40 +435,11 @@ func _badge(count: int) -> Control:
 	return badge
 
 
-## The four gold corner brackets drawn around the selected slot, gently pulsing.
+## The pack's gold corner brackets, bouncing around the selected slot.
 func _build_cursor() -> void:
-	_cursor = Control.new()
-	_cursor.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for corner in ["tl", "tr", "bl", "br"]:
-		var tex: Texture2D = load(UI + "selectbox_%s.png" % corner)
-		var piece := TextureRect.new()
-		piece.texture = tex
-		piece.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		piece.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		piece.size = tex.get_size() * 3
-		piece.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		piece.name = corner
-		_cursor.add_child(piece)
-	_cursor.resized.connect(_place_cursor_corners.bind(0.0))
+	_cursor = SelectCursor.new()
 	_cursor.visible = false
 	add_child(_cursor)
-	# Pulse: brackets move out a little and back
-	_cursor_tween = create_tween().set_loops()
-	_cursor_tween.tween_method(_place_cursor_corners, 0.0, 4.0, 0.5).set_trans(Tween.TRANS_SINE)
-	_cursor_tween.tween_method(_place_cursor_corners, 4.0, 0.0, 0.5).set_trans(Tween.TRANS_SINE)
-
-
-func _place_cursor_corners(spread: float) -> void:
-	var size := _cursor.size
-	for piece in _cursor.get_children():
-		var p: Vector2
-		match String(piece.name):
-			"tl": p = Vector2(-6 - spread, -6 - spread)
-			"tr": p = Vector2(size.x - piece.size.x + 6 + spread, -6 - spread)
-			"bl": p = Vector2(-6 - spread, size.y - piece.size.y + 6 + spread)
-			"br": p = Vector2(size.x - piece.size.x + 6 + spread, size.y - piece.size.y + 6 + spread)
-		piece.position = p
 
 
 func _arrow(file: String, step: int) -> TextureButton:
@@ -500,20 +473,5 @@ func _label(text: String, size: int, color: Color) -> Label:
 	return label
 
 
-## Builds a StyleBox from the pack's 9-slice pieces (prefix "dt" dark brown,
-## "lt" light brown, "w" white), blown up `scale` times with crisp pixels.
 func _nine(prefix: String, scale: int, margin: int) -> StyleBoxTexture:
-	var image := Image.create(9, 9, false, Image.FORMAT_RGBA8)
-	var parts := {"tl": Vector2i(0, 0), "tc": Vector2i(1, 0), "tr": Vector2i(2, 0),
-		"lc": Vector2i(0, 1), "c": Vector2i(1, 1), "rc": Vector2i(2, 1),
-		"bl": Vector2i(0, 2), "bc": Vector2i(1, 2), "br": Vector2i(2, 2)}
-	for part in parts:
-		var piece: Image = load(UI + "9slice_box_white/%s_box_9slice_%s.png" % [prefix, part]).get_image()
-		piece.convert(Image.FORMAT_RGBA8)
-		image.blit_rect(piece, Rect2i(0, 0, 3, 3), parts[part] * 3)
-	image.resize(9 * scale, 9 * scale, Image.INTERPOLATE_NEAREST)
-	var style := StyleBoxTexture.new()
-	style.texture = ImageTexture.create_from_image(image)
-	style.set_texture_margin_all(3 * scale)
-	style.set_content_margin_all(margin)
-	return style
+	return UIStyle.nine(prefix, scale, margin)

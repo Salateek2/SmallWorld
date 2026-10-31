@@ -476,10 +476,10 @@ func _open_shop() -> void:
 ## The closest villager you can talk to (within reach), or null.
 func _npc_in_reach() -> Node2D:
 	var best: Node2D = null
-	var best_dist := 28.0
+	var best_dist := INF
 	for npc in get_tree().get_nodes_in_group("npc"):
 		var d := global_position.distance_to(npc.global_position)
-		if d < best_dist:
+		if d < npc.talk_reach and d < best_dist:
 			best = npc
 			best_dist = d
 	return best

@@ -13,8 +13,10 @@ const FRAME_WIDTH := 96
 @export var npc_id := "" ## key in story_text.gd (NPCS / TALK); empty = can't talk
 @export var animation_folder := "IDLE" ## Characters/Human folder to play, e.g. HAMMERING
 @export var turn_to_player := true ## false = keeps facing their work
-@export var face_right := false ## start facing right (Gus faces his anvil)
+@export var face_right := false ## start facing right
+@export var frame_range := Vector2i(-1, -1) ## only play these frames of the animation (first, last)
 @export var shop := "" ## script of a shop window to open when you press E (empty = talk)
+@export var talk_reach := 28.0 ## how close the player must be to talk (Mira: across her counter)
 
 var _layers: Array[AnimatedSprite2D] = []
 var _news: Sprite2D # the "!" above the head
@@ -89,6 +91,8 @@ func _load_animation(prefix: String) -> SpriteFrames:
 		if file.begins_with(prefix + "_") and file.ends_with(".png"):
 			var texture: Texture2D = load(folder + file)
 			for i in texture.get_width() / FRAME_WIDTH:
+				if frame_range.x >= 0 and (i < frame_range.x or i > frame_range.y):
+					continue # e.g. Gus: just the lift-and-strike part of hammering
 				var atlas := AtlasTexture.new()
 				atlas.atlas = texture
 				atlas.region = Rect2(i * FRAME_WIDTH, 0, FRAME_WIDTH, 64)

@@ -68,7 +68,49 @@ const ANVIL := {"origin": Vector2i(37, 18), "size": Vector2i(2, 1)}
 const FORGE := {"origin": Vector2i(39, 17), "size": Vector2i(2, 2)} # furnace + stone chimney
 const BARREL_OPEN := Vector2i(40, 16)
 const BARREL_WATER := Vector2i(38, 16)
-const FORGE_FIRE := "res://assets/Sunnyside_World_Assets/Elements/VFX/Fire/spr_deco_fire_02_strip4.png"
+const FORGE_FIRE := "res://assets/Sunnyside_World_Assets/Elements/VFX/Fire/spr_deco_fire_01_strip4.png"
+const FIRE_FRAME_WIDTH := 5
+# The tavern: an 8 x 8 house on the upper street. Its door leads (with a fade) into a big
+# hall built off the edge of the map, furnished with props from assets/tavern/tavern_props.png
+# (made with PixelLab, 32 x 32 each, 8 per row).
+const TAVERN_OFFSET := Vector2i(-5, -17) # from the village center
+const TAVERN_PROPS := "res://assets/tavern/tavern_props.png"
+const HALL_SIZE := Vector2i(20, 14) # tiles, walls included
+const HALL_GAP := 40 # tiles between the map's right edge and the hall
+const HALL_DOOR_X := 10
+const HALL_MARGIN := 600.0 # black space around the hall that the camera may show
+# [sheet column, sheet row, tile in the hall (top-left of the 2 x 2 prop), solid width (0 = walk through)]
+const HALL_LAYOUT := [
+	# along the back wall
+	[0, 7, Vector2(2, 1), 26], # fireplace
+	[1, 7, Vector2(3.5, 0), 0], # torch
+	[1, 3, Vector2(5, 1), 26], # barrel with a tap
+	[3, 6, Vector2(8, 1), 26], # bottle shelves
+	[4, 6, Vector2(10, 1), 26],
+	[6, 3, Vector2(12, 1), 26], # another barrel
+	[3, 7, Vector2(14, 0), 0], # antlers on the wall
+	[7, 7, Vector2(16, 0.5), 30], # stairs (the rooms upstairs come later)
+	# the bar, with Mira behind it
+	[1, 1, Vector2(6, 3), 32],
+	[2, 1, Vector2(8, 3), 32], # the beer tap
+	[1, 1, Vector2(10, 3), 32],
+	[1, 1, Vector2(12, 3), 32],
+	# tables (the door aisle in the middle stays clear)
+	[0, 5, Vector2(2, 6.5), 26],
+	[3, 5, Vector2(2, 10), 26],
+	[4, 5, Vector2(6, 9), 26],
+	[5, 5, Vector2(12, 9), 26],
+	[6, 5, Vector2(15, 6.5), 26],
+	[1, 5, Vector2(15, 10), 26],
+	[7, 3, Vector2(17, 11), 26], # stacked barrels in the corner
+]
+const HALL_STOOLS := [ # 1 tile each, never solid
+	Vector2(9, 6), Vector2(12, 6), Vector2(13, 6), # at the bar
+	Vector2(1, 7), Vector2(4, 7), Vector2(1, 10.5), Vector2(4, 10.5),
+	Vector2(5, 9.5), Vector2(8, 9.5), Vector2(11, 9.5), Vector2(14, 9.5),
+	Vector2(14, 7), Vector2(17, 7), Vector2(14, 10.5),
+]
+const TAVERN_SIGN := Vector2i(0, 0) # sheet cell: hanging sign with a mug
 const DOCK_PLANK := Vector2i(40, 5)
 const DOCK_END := Vector2i(40, 6)
 const DOCK_POST_LEFT := Vector2i(39, 5)
@@ -242,6 +284,8 @@ var _changes: Array = [] # trees felled and plants cut this game (saved, replaye
 @export_storage var trough_cell := Vector2i()
 ## The smithy's furnace (its fire and chimney smoke are added when the game starts)
 @export_storage var forge_cell := Vector2i(-1, -1)
+## Mira's tavern (the furniture and sign are added when the game starts)
+@export_storage var tavern_rect := Rect2i()
 ## Raised ground: one rectangle per plateau (the village's upper level, hills)
 @export_storage var plateaus: Array[Rect2i] = []
 ## Ramps: the columns of a cliff you can walk through, as rectangles over the cliff face
@@ -251,6 +295,8 @@ var _rng := RandomNumberGenerator.new()
 var _blocked := {} # cells that already have a path, water or object
 var _source: TileSetAtlasSource
 var _roofs: Array[TileMapLayer] = [] # one per house at runtime, faded when you're inside
+var _in_hall := false # player is inside the tavern hall (camera kept there)
+var _fading := false # walking through a door
 
 
 func _ready() -> void:
@@ -266,6 +312,7 @@ func _ready() -> void:
 	_spawn_clock()
 	_spawn_merchant()
 	_spawn_story_characters()
+	_build_tavern() # after Mira, so the bar is drawn in front of her
 	_setup_world_bounds()
 	_place_player()
 	_spawn_goblins()
@@ -436,7 +483,8 @@ func _make_home(layers: Dictionary) -> void:
 ## Builds a house with its top-left corner at `cell`. inner = width of the room in tiles.
 ## Layers: floor/back wall on Ground, furniture and front wall on Decor (under the player),
 ## side posts on Canopy (over the player), roof on Roofs (over the player, fades when inside).
-func _build_house(layers: Dictionary, cell: Vector2i, inner: int, colour: int, chimney := false) -> void:
+func _build_house(layers: Dictionary, cell: Vector2i, inner: int, colour: int, chimney := false,
+		height := HOUSE_HEIGHT, furnished := true) -> Dictionary:
 	var ground: TileMapLayer = layers["ground"]
 	var decor: TileMapLayer = layers["decor"]
 	var canopy: TileMapLayer = layers["canopy"]
@@ -446,25 +494,38 @@ func _build_house(layers: Dictionary, cell: Vector2i, inner: int, colour: int, c
 	var door_x := 1 + inner / 2
 	var window_x := 1 + (inner - 1) / 2 if inner % 2 == 0 else door_x
 	for x in width:
-		for y in HOUSE_HEIGHT:
+		for y in height:
 			var c := cell + Vector2i(x, y)
 			_blocked[c] = true
 			if x == 0 or x == width - 1:
-				# Side posts; the bottom one is part of the front wall
-				var post := (POST_LEFT if x == 0 else POST_RIGHT) + shade + Vector2i(0, y)
-				_set_tile(decor if y == HOUSE_HEIGHT - 1 else canopy, c, post)
+				# Side posts (the middle piece repeats for taller houses); the bottom one is front wall
+				var post_row := 0 if y == 0 else (5 if y == height - 1 else (4 if y == height - 2 else mini(y, 3)))
+				var post := (POST_LEFT if x == 0 else POST_RIGHT) + shade + Vector2i(0, post_row)
+				_set_tile(decor if y == height - 1 else canopy, c, post)
 				continue
 			if y > 0:
 				_set_tile(ground, c, BACK_WALL if y == 1 else FLOOR)
-			if y == HOUSE_HEIGHT - 1:
+			if y == height - 1:
 				_set_tile(decor, c, (DOOR if x == door_x else WALL_WINDOW) + shade)
 				continue
-			var roof := ROOF + shade + Vector2i(0, y)
-			if y == 1 or y == 2:
-				roof = ROOF + shade + Vector2i(0, 3) # plain shingles
-				if y == 1 and x == window_x:
-					roof = ROOF_WINDOW + shade
+			# Roof: top edge, shingles, and the eave just above the front wall
+			var roof := ROOF + shade + Vector2i(0, 0 if y == 0 else (4 if y == height - 2 else 3))
+			if y == 1 and x == window_x:
+				roof = ROOF_WINDOW + shade
 			_set_tile(roofs, c, roof)
+
+	var house := {
+		"rect": Rect2i(cell, Vector2i(width, height)),
+		"door": cell + Vector2i(door_x, height - 1),
+	}
+	if chimney:
+		# Top shingle row, right side of the roof
+		var chimney_cell := cell + Vector2i(width - 2, 1)
+		_set_tile(roofs, chimney_cell, ROOF_CHIMNEY + shade)
+		house["chimney"] = chimney_cell
+	houses.append(house)
+	if not furnished:
+		return house
 
 	# Furniture: bed in the corner, a cupboard, a rug by the door and a pot
 	_place_tiles(decor, cell + Vector2i(1, 1), BED)
@@ -474,17 +535,7 @@ func _build_house(layers: Dictionary, cell: Vector2i, inner: int, colour: int, c
 		_place_tiles(decor, cell + Vector2i(inner - 1, 1), {"origin": _pick(SHELVES), "size": Vector2i(1, 2)})
 	_place_tiles(decor, cell + Vector2i(door_x - 1, 3), RUG)
 	_set_tile(decor, cell + Vector2i(1, 4), _pick(JARS))
-
-	var house := {
-		"rect": Rect2i(cell, Vector2i(width, HOUSE_HEIGHT)),
-		"door": cell + Vector2i(door_x, HOUSE_HEIGHT - 1),
-	}
-	if chimney:
-		# Top shingle row, right side of the roof
-		var chimney_cell := cell + Vector2i(width - 2, 1)
-		_set_tile(roofs, chimney_cell, ROOF_CHIMNEY + shade)
-		house["chimney"] = chimney_cell
-	houses.append(house)
+	return house
 
 
 func _set_tile(layer: TileMapLayer, cell: Vector2i, coords: Vector2i) -> void:
@@ -559,11 +610,15 @@ func _make_village(layers: Dictionary) -> Vector2i:
 	var colours := HOUSE_COLOURS.slice(1)
 	var first := _rng.randi() % colours.size()
 	var spots: Array[Vector2i] = [
-		Vector2i(-20, -15), Vector2i(-12, -15), Vector2i(-4, -15), Vector2i(4, -15), Vector2i(12, -15),
+		Vector2i(-20, -15), Vector2i(-12, -15), Vector2i(4, -15), Vector2i(12, -15),
 		Vector2i(-9, 6), Vector2i(3, 6),
 	]
 	for i in spots.size():
 		_build_house(layers, c + spots[i], 4, colours[(first + i) % colours.size()], _rng.randf() < CHIMNEY_CHANCE)
+	# Mira's tavern in the middle of the upper street: bigger, furnished in _furnish_tavern
+	var tavern := _build_house(layers, c + TAVERN_OFFSET, 6, HOUSE_COLOURS[2], true, 8, false)
+	tavern["tavern"] = true
+	tavern_rect = tavern["rect"]
 	_make_smithy(layers, c + Vector2i(-22, 4))
 	return c
 
@@ -1295,7 +1350,10 @@ func location_name_at(world_pos: Vector2) -> String:
 	var ground := get_node_or_null("Ground") as TileMapLayer
 	if ground == null:
 		return ""
-	return location_name(location_at(ground.local_to_map(ground.to_local(world_pos))))
+	var cell := ground.local_to_map(ground.to_local(world_pos))
+	if hall_rect().has_point(cell):
+		return "The Tavern"
+	return location_name(location_at(cell))
 
 
 ## At game start: gives every house its own roof layer (so only that roof fades),
@@ -1380,7 +1438,12 @@ func _process(delta: float) -> void:
 	if player == null or ground == null:
 		return
 	var cell := ground.local_to_map(ground.to_local(player.global_position))
+	_check_doors(cell, player)
+	if hall_rect().has_point(cell) != _in_hall:
+		_update_camera_area(player) # e.g. a save loaded inside the tavern
 	for i in _roofs.size():
+		if houses[i].get("tavern", false):
+			continue # you go through the tavern's door instead of under its roof
 		var rect: Rect2i = houses[i]["rect"]
 		# Inside = in the room (between the posts, below the roof's top edge, above the front wall)
 		var room := Rect2i(rect.position + Vector2i(1, 1), rect.size - Vector2i(2, 1))
@@ -1479,6 +1542,167 @@ func _spawn_merchant() -> void:
 		move_child(stall, player.get_index()) # drawn over the merchant's feet: he's behind it
 
 
+## The tavern's hall: the room you get to through its door, built past the map's right edge.
+func hall_rect() -> Rect2i:
+	return Rect2i(Vector2i(map_width + HALL_GAP, 10), HALL_SIZE)
+
+
+func _hall_door() -> Vector2i:
+	return hall_rect().position + Vector2i(HALL_DOOR_X, HALL_SIZE.y - 1)
+
+
+func _tavern_door() -> Vector2i:
+	for house in houses:
+		if house.get("tavern", false):
+			return house["door"]
+	return Vector2i(-1, -1)
+
+
+## Builds the tavern hall (floor, walls, furniture) and the sign over the tavern's front door.
+func _build_tavern() -> void:
+	if tavern_rect.size == Vector2i.ZERO:
+		return
+	var ground := get_node("Ground") as TileMapLayer
+	var sheet: Texture2D = load(TAVERN_PROPS)
+	var prop := func(col: int, row: int) -> AtlasTexture:
+		var atlas := AtlasTexture.new()
+		atlas.atlas = sheet
+		atlas.region = Rect2(col * 32, row * 32, 32, 32)
+		return atlas
+	var player := get_node_or_null("Player")
+
+	var hall := Node2D.new()
+	hall.name = "TavernHall"
+	var rect := hall_rect()
+	var corner := cell_to_world(rect.position) - Vector2(8, 8) # hall's top-left pixel
+	var size := Vector2(rect.size * 16)
+
+	# Floor and walls, from the same house tiles as the tavern outside (orange)
+	var tiles := TileMapLayer.new()
+	tiles.tile_set = ground.tile_set
+	tiles.collision_enabled = false
+	tiles.position = ground.position
+	var shade := Vector2i(0, HOUSE_COLOURS[2])
+	var last := rect.size.y - 1
+	for x in rect.size.x:
+		for y in rect.size.y:
+			var c := rect.position + Vector2i(x, y)
+			if x == 0 or x == rect.size.x - 1:
+				var post_row := 0 if y == 0 else (5 if y == last else (4 if y == last - 1 else mini(y, 3)))
+				tiles.set_cell(c, SOURCE_ID, (POST_LEFT if x == 0 else POST_RIGHT) + shade + Vector2i(0, post_row))
+			elif y == last:
+				tiles.set_cell(c, SOURCE_ID, (DOOR if x == HALL_DOOR_X else WALL_WINDOW) + shade)
+			else:
+				tiles.set_cell(c, SOURCE_ID, BACK_WALL if y < 2 else FLOOR)
+	tiles.name = "TavernFloor"
+	add_child(tiles)
+	move_child(tiles, ground.get_index() + 1) # under everyone, Mira included
+
+	var solid := StaticBody2D.new()
+	hall.add_child(solid)
+	var front := corner.y + last * 16
+	var door_left := corner.x + HALL_DOOR_X * 16
+	var walls: Array[Rect2] = [
+		Rect2(corner.x, corner.y, 16, size.y), # left
+		Rect2(corner.x + size.x - 16, corner.y, 16, size.y), # right
+		Rect2(corner.x, corner.y, size.x, 28), # back wall
+		Rect2(corner.x, front, door_left - corner.x, 12), # front, left of the door
+		Rect2(door_left + 16, front, corner.x + size.x - door_left - 16, 12), # right of the door
+	]
+	for item in HALL_LAYOUT:
+		var sprite := Sprite2D.new()
+		sprite.texture = prop.call(item[0], item[1])
+		sprite.centered = false
+		sprite.position = to_local(corner + item[2] * 16)
+		hall.add_child(sprite)
+		if item[3] > 0: # bump into its lower part
+			walls.append(Rect2(corner + item[2] * 16 + Vector2(16 - item[3] / 2.0, 18), Vector2(item[3], 12)))
+	for r in walls:
+		var shape := RectangleShape2D.new()
+		shape.size = r.size
+		var collision := CollisionShape2D.new()
+		collision.shape = shape
+		collision.position = to_local(r.get_center())
+		solid.add_child(collision)
+	for cell in HALL_STOOLS:
+		var stool := Sprite2D.new()
+		stool.texture = prop.call(7, 4)
+		stool.scale = Vector2.ONE * 0.75 # the sheet's stools are a bit tall next to people
+		stool.position = to_local(corner + cell * 16 + Vector2(8, 4))
+		hall.add_child(stool)
+	add_child(hall)
+	if player:
+		move_child(hall, player.get_index()) # under the player, over Mira (she's behind the bar)
+
+	# Darkness around the room, under everything so it never covers the map
+	var backdrop := ColorRect.new()
+	backdrop.color = Color.BLACK
+	backdrop.position = to_local(corner) - Vector2.ONE * HALL_MARGIN
+	backdrop.size = size + Vector2.ONE * HALL_MARGIN * 2
+	add_child(backdrop)
+	move_child(backdrop, 0)
+
+	# The sign hangs on the front wall beside the door, over the roof's edge
+	var outside := cell_to_world(tavern_rect.position) - Vector2(8, 8)
+	var sign := Sprite2D.new()
+	sign.texture = prop.call(TAVERN_SIGN.x, TAVERN_SIGN.y)
+	sign.centered = false
+	sign.position = to_local(outside + Vector2((tavern_rect.size.x - 3) * 16 + 4, (tavern_rect.size.y - 3) * 16 + 8))
+	for i in houses.size():
+		if houses[i].get("tavern", false) and i < _roofs.size():
+			_roofs[i].add_child(sign)
+	if sign.get_parent() == null:
+		add_child(sign)
+
+
+## Doors that lead somewhere else: stepping into the tavern's door takes you into the hall,
+## and the hall's door takes you back out to the street.
+func _check_doors(cell: Vector2i, player: Node2D) -> void:
+	if _fading:
+		return
+	if cell == _tavern_door():
+		_go_through_door(player, _hall_door() + Vector2i(0, -1))
+	elif cell == _hall_door():
+		_go_through_door(player, _tavern_door() + Vector2i(0, 1))
+
+
+func _go_through_door(player: Node2D, to_cell: Vector2i) -> void:
+	_fading = true
+	player.set_physics_process(false)
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	var black := ColorRect.new()
+	black.color = Color(0, 0, 0, 0)
+	black.set_anchors_preset(Control.PRESET_FULL_RECT)
+	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(black)
+	add_child(layer)
+	var fade := create_tween()
+	fade.tween_property(black, "color:a", 1.0, 0.25)
+	fade.tween_callback(func():
+		player.global_position = cell_to_world(to_cell)
+		_update_camera_area(player))
+	fade.tween_interval(0.1)
+	fade.tween_property(black, "color:a", 0.0, 0.25)
+	fade.tween_callback(func():
+		player.set_physics_process(true)
+		layer.queue_free()
+		_fading = false)
+
+
+## Keeps the camera on the map, or on the hall while you're in it (also right after loading a save).
+func _update_camera_area(player: Node2D) -> void:
+	var ground := get_node("Ground") as TileMapLayer
+	_in_hall = hall_rect().has_point(ground.local_to_map(ground.to_local(player.global_position)))
+	if not player.has_method("set_camera_limits"):
+		return
+	if _in_hall:
+		var top_left := cell_to_world(hall_rect().position) - Vector2(8, 8)
+		player.set_camera_limits(Rect2(top_left, Vector2(HALL_SIZE * 16)).grow(HALL_MARGIN))
+	else:
+		player.set_camera_limits(_world_rect())
+
+
 ## The smithy's forge: flickering fire in the furnace (its smoke comes from _add_chimney_smoke).
 func _add_forge_fire() -> void:
 	if forge_cell.x < 0:
@@ -1489,11 +1713,13 @@ func _add_forge_fire() -> void:
 	for i in 4:
 		var atlas := AtlasTexture.new()
 		atlas.atlas = strip
-		atlas.region = Rect2(i * 8, 0, 8, strip.get_height())
+		atlas.region = Rect2(i * FIRE_FRAME_WIDTH, 0, FIRE_FRAME_WIDTH, strip.get_height())
 		frames.add_frame("default", atlas)
 	var fire := AnimatedSprite2D.new()
 	fire.sprite_frames = frames
-	fire.position = to_local(cell_to_world(forge_cell)) + Vector2(-1, -2) # in the furnace mouth
+	fire.centered = false
+	# The furnace's opening is pixels 6-11 across, 1-6 down: flames stand on its bottom edge
+	fire.position = to_local(cell_to_world(forge_cell)) - Vector2(8, 8) + Vector2(7, -3)
 	fire.play()
 	add_child(fire)
 	var decor := get_node_or_null("Decor")
@@ -1542,8 +1768,11 @@ func _spawn_story_characters() -> void:
 		npc.set("animation_folder", info.get("animation", "IDLE"))
 		npc.set("turn_to_player", info.get("turn_to_player", true))
 		npc.set("face_right", info.get("face_right", false))
+		npc.set("frame_range", info.get("frames", Vector2i(-1, -1)))
 		npc.set("shop", info.get("shop", ""))
-		npc.position = to_local(cell_to_world(location_center(info["place"]) + info["offset"]))
+		npc.set("talk_reach", info.get("reach", 28.0))
+		var origin := hall_rect().position if info["place"] == "tavern" else location_center(info["place"])
+		npc.position = to_local(cell_to_world(origin + info["offset"]))
 		add_child(npc)
 		if player:
 			move_child(npc, player.get_index())

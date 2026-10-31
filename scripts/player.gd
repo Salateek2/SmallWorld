@@ -9,7 +9,7 @@ extends CharacterBody2D
 ## Tools always work on the tile in front of the character (left or right, the way it faces).
 ## Mouse wheel or +/- zooms the camera in and out.
 ## E at the market counter opens the shop; E next to your bed sleeps until morning.
-## I or Tab opens the inventory.
+## I or Tab opens the inventory. E next to a villager talks to them.
 
 enum Hair { NONE, BOWL, CURLY, LONG, MOP, SHORT, SPIKEY }
 enum Tool { AXE, HOE, SEEDS, WATER, SWORD, ROD }
@@ -121,11 +121,15 @@ var _fish_caught := false
 var _above_head: Sprite2D # "!" when a fish bites, the fish when you catch it
 var _toast: Label # short message above the hotbar ("It got away...")
 var _toast_tween: Tween
+var _quest_box: PanelContainer # current quest, under the clock
+var _quest_title: Label
+var _quest_goal: Label
 
 
 func _ready() -> void:
 	hp = max_hp
 	add_to_group("player")
+	Story.player = self
 	_setup_input()
 	_build_sprite_layers()
 	_build_collision()
@@ -176,6 +180,8 @@ func _physics_process(delta: float) -> void:
 		var world := get_parent()
 		if world.has_method("is_near_market") and world.is_near_market(global_position):
 			_open_shop()
+		elif _npc_in_reach():
+			_talk_to(_npc_in_reach())
 		elif world.has_method("is_near_bed") and world.is_near_bed(global_position):
 			_sleep(false)
 		elif tool == Tool.ROD:
@@ -407,6 +413,7 @@ func _update_clock() -> void:
 	var clock := _clock()
 	if clock:
 		_clock_label.text = clock.time_text()
+	_update_quest_tracker()
 
 
 ## Called by the clock at 2 AM.
@@ -444,8 +451,42 @@ func _open_shop() -> void:
 	_open_menu("res://scripts/shop.gd")
 
 
-## Opens a menu window (shop, inventory). Time stands still while it's open.
-func _open_menu(script_path: String) -> void:
+## The closest villager you can talk to (within reach), or null.
+func _npc_in_reach() -> Node2D:
+	var best: Node2D = null
+	var best_dist := 28.0
+	for npc in get_tree().get_nodes_in_group("npc"):
+		var d := global_position.distance_to(npc.global_position)
+		if d < best_dist:
+			best = npc
+			best_dist = d
+	return best
+
+
+func _talk_to(npc: Node2D) -> void:
+	var key := Story.dialogue_for(npc.npc_id)
+	if key == "":
+		return
+	_face(npc.global_position.x - global_position.x)
+	_open_menu("res://scripts/story/dialogue_box.gd", {"dialogue_key": key})
+
+
+## Shows a short message above the hotbar (used by the story for quest news).
+func notify(text: String) -> void:
+	_show_toast(text)
+
+
+func _update_quest_tracker() -> void:
+	var id := Story.current_quest()
+	_quest_box.visible = id != ""
+	if id != "":
+		_quest_title.text = Story.Text.QUESTS[id]["title"]
+		_quest_goal.text = Story.quest_goal_text(id)
+
+
+## Opens a menu window (shop, inventory, dialogue). Time stands still while it's open.
+## setup = extra properties to set on the window before it opens.
+func _open_menu(script_path: String, setup := {}) -> void:
 	var clock := _clock()
 	if clock:
 		clock.paused = true
@@ -453,6 +494,8 @@ func _open_menu(script_path: String) -> void:
 	var menu := CanvasLayer.new()
 	menu.set_script(load(script_path))
 	menu.player = self
+	for property in setup:
+		menu.set(property, setup[property])
 	menu.closed.connect(_on_menu_closed)
 	add_child(menu)
 
@@ -677,7 +720,7 @@ func _build_hud() -> void:
 	var hud := CanvasLayer.new()
 	_hud_label = Label.new()
 	_hud_label.position = Vector2(16, 12)
-	_hud_label.add_theme_font_size_override("font_size", 24)
+	_hud_label.add_theme_font_size_override("font_size", 16)
 	_hud_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_hud_label.add_theme_constant_override("outline_size", 6)
 	hud.add_child(_hud_label)
@@ -688,10 +731,40 @@ func _build_hud() -> void:
 	_clock_label.offset_right = -16
 	_clock_label.offset_top = 12
 	_clock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_clock_label.add_theme_font_size_override("font_size", 24)
+	_clock_label.add_theme_font_size_override("font_size", 16)
 	_clock_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_clock_label.add_theme_constant_override("outline_size", 6)
 	hud.add_child(_clock_label)
+
+	# Quest tracker: light pixel box under the clock with the quest's name and goal
+	_quest_box = PanelContainer.new()
+	_quest_box.add_theme_stylebox_override("panel", UIStyle.nine("lt", 3, 12))
+	_quest_box.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_quest_box.offset_top = 52
+	_quest_box.offset_right = -16
+	_quest_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var quest_rows := VBoxContainer.new()
+	quest_rows.add_theme_constant_override("separation", 0)
+	var title_row := HBoxContainer.new()
+	var alert := TextureRect.new()
+	alert.texture = load(UI_DIR + "expression_alerted.png")
+	alert.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	alert.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	alert.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	alert.custom_minimum_size = Vector2(12, 22)
+	title_row.add_child(alert)
+	_quest_title = Label.new()
+	_quest_title.add_theme_font_size_override("font_size", 16)
+	_quest_title.add_theme_color_override("font_color", Color(0.24, 0.16, 0.12))
+	title_row.add_child(_quest_title)
+	quest_rows.add_child(title_row)
+	_quest_goal = Label.new()
+	_quest_goal.add_theme_font_size_override("font_size", 8)
+	_quest_goal.add_theme_color_override("font_color", Color(0.38, 0.26, 0.2))
+	quest_rows.add_child(_quest_goal)
+	_quest_box.add_child(quest_rows)
+	_quest_box.visible = false
+	hud.add_child(_quest_box)
 
 	_build_location_banner(hud)
 	_build_hotbar(hud)
@@ -703,7 +776,7 @@ func _build_hud() -> void:
 	_toast.offset_top = -150
 	_toast.offset_bottom = -120
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_toast.add_theme_font_size_override("font_size", 22)
+	_toast.add_theme_font_size_override("font_size", 16)
 	_toast.add_theme_color_override("font_color", Color(1, 0.95, 0.75))
 	_toast.add_theme_color_override("font_outline_color", Color.BLACK)
 	_toast.add_theme_constant_override("outline_size", 6)
@@ -724,7 +797,7 @@ func _build_hud() -> void:
 	_message.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_message.add_theme_font_size_override("font_size", 40)
+	_message.add_theme_font_size_override("font_size", 32)
 	_message.modulate.a = 0.0
 	hud.add_child(_message)
 
@@ -739,7 +812,7 @@ func _build_location_banner(hud: CanvasLayer) -> void:
 	_location_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	_location_label.offset_top = 60
 	_location_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_location_label.add_theme_font_size_override("font_size", 36)
+	_location_label.add_theme_font_size_override("font_size", 24)
 	_location_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8))
 	_location_label.add_theme_color_override("font_outline_color", Color(0.2, 0.12, 0.05))
 	_location_label.add_theme_constant_override("outline_size", 10)
@@ -782,7 +855,7 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 
 	_tool_label = Label.new()
 	_tool_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_tool_label.add_theme_font_size_override("font_size", 20)
+	_tool_label.add_theme_font_size_override("font_size", 16)
 	_tool_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_tool_label.add_theme_constant_override("outline_size", 6)
 	column.add_child(_tool_label)
@@ -809,7 +882,7 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 		slot.add_child(icon)
 		var number := Label.new()
 		number.text = str(i + 1)
-		number.add_theme_font_size_override("font_size", 13)
+		number.add_theme_font_size_override("font_size", 8)
 		number.add_theme_color_override("font_color", Color(0.24, 0.16, 0.12))
 		number.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		number.size_flags_vertical = Control.SIZE_SHRINK_BEGIN

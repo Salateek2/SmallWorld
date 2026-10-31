@@ -38,10 +38,10 @@ func _ready() -> void:
 
 	var header := HBoxContainer.new()
 	column.add_child(header)
-	var title := _label("Willowbrook Market", 26)
+	var title := _label("Willowbrook Market", 24)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
-	_coins_label = _label("", 22, Color(1, 0.85, 0.35))
+	_coins_label = _label("", 16, Color(1, 0.85, 0.35))
 	header.add_child(_coins_label)
 
 	var sides := HBoxContainer.new()
@@ -88,14 +88,14 @@ func refresh() -> void:
 		_button(row, "Sell all", _sell.bind(crop, count))
 	if not anything:
 		var row := HBoxContainer.new()
-		row.add_child(_label("Nothing to sell yet.\nHarvest some crops!", 16, Color(0.9, 0.85, 0.75)))
+		row.add_child(_label("Nothing to sell yet.\nHarvest some crops!", 8, Color(0.9, 0.85, 0.75)))
 		_sell_list.add_child(row)
 
 	for crop in Farm.CROP_TYPES:
 		var data: Dictionary = Farm.CROP_DATA[crop]
 		var row := _row(_buy_list, Farm.crop_texture(crop, 0),
-				"%s seeds (have %d)" % [crop.capitalize(), player.seeds.get(crop, 0)],
-				"%dc, ripe in %d days" % [data["seed"], data["nights"]])
+				"%s seeds" % crop.capitalize(),
+				"%dc - ripe in %d days - you have %d" % [data["seed"], data["nights"], player.seeds.get(crop, 0)])
 		_button(row, "Buy 1", _buy.bind(crop, 1), player.coins >= data["seed"])
 		_button(row, "Buy 5", _buy.bind(crop, 5), player.coins >= data["seed"] * 5)
 
@@ -137,9 +137,9 @@ func _icon(item: String) -> Texture2D:
 
 func _side(parent: Container, heading: String) -> VBoxContainer:
 	var list := VBoxContainer.new()
-	list.custom_minimum_size = Vector2(380, 0)
+	list.custom_minimum_size = Vector2(420, 0)
 	list.add_theme_constant_override("separation", 6)
-	list.add_child(_label(heading, 20, Color(1, 0.9, 0.7)))
+	list.add_child(_label(heading, 16, Color(1, 0.9, 0.7)))
 	parent.add_child(list)
 	return list
 
@@ -156,9 +156,9 @@ func _row(list: VBoxContainer, icon_texture: Texture2D, text: String, sub: Strin
 	row.add_child(icon)
 	var texts := VBoxContainer.new()
 	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	texts.add_theme_constant_override("separation", -4)
+	texts.add_theme_constant_override("separation", 4)
 	texts.add_child(_label(text, 16))
-	texts.add_child(_label(sub, 13, Color(0.85, 0.8, 0.7)))
+	texts.add_child(_label(sub, 8, Color(0.85, 0.8, 0.7)))
 	row.add_child(texts)
 	list.add_child(row)
 	return row

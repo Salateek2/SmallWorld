@@ -1,15 +1,19 @@
 extends StaticBody2D
 ## SmallWorld villager: a Sunnyside human standing in place (idle animation).
 ## Created at runtime by map_generator; the merchant at the market is one of these.
-## Turns to face the player when they come close.
+## Turns to face the player when they come close. Characters with an npc_id can be
+## talked to (E) and show a bobbing "!" when they have a new quest or a quest to hand in.
 
 const HUMAN_DIR := "res://assets/Sunnyside_World_Assets/Characters/Human/IDLE/"
 const FRAME_WIDTH := 96
 
 @export var hair := "longhair" ## bowlhair, curlyhair, longhair, mophair, shorthair, spikeyhair
 @export var display_name := "Villager"
+@export var npc_id := "" ## key in story_text.gd (NPCS / TALK); empty = can't talk
 
 var _layers: Array[AnimatedSprite2D] = []
+var _news: Sprite2D # the "!" above the head
+var _name_tag: Label # only shown when the player is close
 
 
 func _ready() -> void:
@@ -36,14 +40,32 @@ func _ready() -> void:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.position = Vector2(-40, -22)
 	label.size = Vector2(80, 10)
+	label.modulate.a = 0.0
 	add_child(label)
+	_name_tag = label
+
+	if npc_id != "":
+		add_to_group("npc")
+		_news = Sprite2D.new()
+		_news.texture = load("res://assets/Sunnyside_World_Assets/UI/expression_alerted.png")
+		_news.position = Vector2(0, -30)
+		add_child(_news)
+		var bob := _news.create_tween().set_loops()
+		bob.tween_property(_news, "position:y", -33.0, 0.4).set_trans(Tween.TRANS_SINE)
+		bob.tween_property(_news, "position:y", -30.0, 0.4).set_trans(Tween.TRANS_SINE)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if _news:
+		_news.visible = Story.has_news(npc_id)
 	var player := get_tree().get_first_node_in_group("player") as Node2D
-	if player and global_position.distance_to(player.global_position) < 80.0:
+	var distance := global_position.distance_to(player.global_position) if player else INF
+	if distance < 80.0:
 		for layer in _layers:
 			layer.flip_h = player.global_position.x < global_position.x
+	# Name fades in when you walk up to them
+	var target := 1.0 if distance < 48.0 else 0.0
+	_name_tag.modulate.a = move_toward(_name_tag.modulate.a, target, delta * 4.0)
 
 
 func _load_idle(prefix: String) -> SpriteFrames:

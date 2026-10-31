@@ -15,10 +15,18 @@ run/main_scene="uid://cf16m4jolpjqn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[autoload]
+
+Story="*res://scripts/story/story.gd"
+
 [display]
 
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[gui]
+
+theme/custom_font="res://assets/fonts/PressStart2P-Regular.ttf"
 
 [physics]
 

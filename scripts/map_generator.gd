@@ -170,6 +170,7 @@ func _ready() -> void:
 	_spawn_farm()
 	_spawn_clock()
 	_spawn_merchant()
+	_spawn_story_characters()
 	_setup_world_bounds()
 	_place_player()
 	_spawn_goblins()
@@ -857,6 +858,24 @@ func _spawn_merchant() -> void:
 	var player := get_node_or_null("Player")
 	if player:
 		move_child(merchant, player.get_index())
+
+
+## Characters from story_text.gd, standing in their locations.
+func _spawn_story_characters() -> void:
+	var characters: Dictionary = load("res://scripts/story/story_text.gd").NPCS
+	var player := get_node_or_null("Player")
+	for id in characters:
+		var info: Dictionary = characters[id]
+		var npc := StaticBody2D.new()
+		npc.set_script(load("res://scripts/villager.gd"))
+		npc.name = info["name"]
+		npc.set("npc_id", id)
+		npc.set("hair", info["hair"])
+		npc.set("display_name", info["name"])
+		npc.position = to_local(cell_to_world(location_center(info["place"]) + info["offset"]))
+		add_child(npc)
+		if player:
+			move_child(npc, player.get_index())
 
 
 func _spawn_farm() -> void:

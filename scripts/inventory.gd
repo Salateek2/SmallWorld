@@ -270,7 +270,7 @@ func _use_selected() -> void:
 func _build_left_column() -> void:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)
-	column.custom_minimum_size = Vector2(300, 0)
+	column.custom_minimum_size = Vector2(320, 0)
 	_window.add_child(column)
 
 	# Header: basket icon + "Inventory"
@@ -279,7 +279,7 @@ func _build_left_column() -> void:
 	var header_row := HBoxContainer.new()
 	header_row.add_theme_constant_override("separation", 12)
 	header_row.add_child(_icon(load(UI + "basket.png"), 40))
-	header_row.add_child(_label("Inventory", 28, DARK_TEXT))
+	header_row.add_child(_label("Inventory", 24, DARK_TEXT))
 	header.add_child(header_row)
 	column.add_child(header)
 
@@ -295,14 +295,14 @@ func _build_left_column() -> void:
 	_info_icon = _icon(null, 56)
 	top.add_child(_info_icon)
 	var names := VBoxContainer.new()
-	names.add_theme_constant_override("separation", -2)
+	names.add_theme_constant_override("separation", 6)
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_info_name = _label("", 24, DARK_TEXT)
-	_info_kind = _label("", 16, SOFT_TEXT)
+	_info_name = _label("", 16, DARK_TEXT)
+	_info_kind = _label("", 8, SOFT_TEXT)
 	names.add_child(_info_name)
 	names.add_child(_info_kind)
 	top.add_child(names)
-	_info_count = _label("", 22, DARK_TEXT)
+	_info_count = _label("", 16, DARK_TEXT)
 	top.add_child(_info_count)
 	info.add_child(top)
 
@@ -321,9 +321,9 @@ func _build_left_column() -> void:
 			_stages.add_child(_icon(load(UI + "arrow_right.png"), 20))
 	info.add_child(_stages)
 
-	_info_text = _label("", 16, DARK_TEXT)
+	_info_text = _label("", 8, DARK_TEXT)
 	_info_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_info_text.custom_minimum_size = Vector2(260, 0)
+	_info_text.custom_minimum_size = Vector2(280, 0)
 	info.add_child(_info_text)
 
 	_use_button = Button.new()
@@ -332,7 +332,7 @@ func _build_left_column() -> void:
 	_use_button.add_theme_stylebox_override("hover", _nine("dt", 2, 8))
 	_use_button.add_theme_stylebox_override("pressed", _nine("lt", 2, 8))
 	_use_button.add_theme_color_override("font_color", CREAM)
-	_use_button.add_theme_font_size_override("font_size", 18)
+	_use_button.add_theme_font_size_override("font_size", 16)
 	_use_button.icon = load(UI + "confirm.png")
 	_use_button.expand_icon = false
 	_use_button.pressed.connect(_use_selected)
@@ -359,7 +359,7 @@ func _build_right_column() -> void:
 		tab.text = TABS[i]["name"]
 		tab.icon = load(UI + TABS[i]["icon"])
 		tab.focus_mode = Control.FOCUS_NONE
-		tab.add_theme_font_size_override("font_size", 20)
+		tab.add_theme_font_size_override("font_size", 16)
 		tab.add_theme_stylebox_override("hover", _nine("dt", 2, 10))
 		tab.add_theme_stylebox_override("pressed", _nine("dt", 2, 10))
 		tab.add_theme_color_override("font_hover_color", CREAM)
@@ -378,7 +378,7 @@ func _build_right_column() -> void:
 	_grid.add_theme_constant_override("h_separation", 10)
 	_grid.add_theme_constant_override("v_separation", 10)
 	inside.add_child(_grid)
-	_page_label = _label("1/1", 18, CREAM)
+	_page_label = _label("1/1", 16, CREAM)
 	_page_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	inside.add_child(_page_label)
 
@@ -421,7 +421,7 @@ func _badge(count: int) -> Control:
 	badge.text = str(count)
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	badge.add_theme_font_size_override("font_size", 13)
+	badge.add_theme_font_size_override("font_size", 8)
 	badge.add_theme_color_override("font_color", DARK_TEXT)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.97, 0.97, 1.0)

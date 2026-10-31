@@ -134,7 +134,6 @@ func _ready() -> void:
 	hp = max_hp
 	add_to_group("player")
 	Story.player = self
-	_setup_input()
 	_build_sprite_layers()
 	_build_collision()
 	_build_camera()
@@ -195,6 +194,8 @@ func _physics_process(delta: float) -> void:
 			_talk_to(_npc_in_reach())
 		elif world.has_method("is_near_bed") and world.is_near_bed(global_position):
 			_sleep(false)
+		elif world.has_node("Ranch") and world.get_node("Ranch").interact(self):
+			pass # fed the animals or milked a cow
 		elif tool == Tool.ROD:
 			_start_fishing()
 		elif tool != Tool.SWORD and farm and farm.is_ripe(_aim_point()):
@@ -644,36 +645,6 @@ func _play(anim: String) -> void:
 
 
 # --- Setup -----------------------------------------------------------------
-
-func _setup_input() -> void:
-	# Creates the input actions if they aren't in Project Settings > Input Map yet.
-	var keys := {
-		"move_up": [KEY_W, KEY_UP],
-		"move_down": [KEY_S, KEY_DOWN],
-		"move_left": [KEY_A, KEY_LEFT],
-		"move_right": [KEY_D, KEY_RIGHT],
-		"run": [KEY_SHIFT],
-		"use": [KEY_E, KEY_SPACE],
-		"tool_1": [KEY_1, KEY_KP_1],
-		"tool_2": [KEY_2, KEY_KP_2],
-		"tool_3": [KEY_3, KEY_KP_3],
-		"tool_4": [KEY_4, KEY_KP_4],
-		"tool_5": [KEY_5, KEY_KP_5],
-		"tool_6": [KEY_6, KEY_KP_6],
-		"next_tool": [KEY_Q],
-		"inventory": [KEY_I, KEY_TAB],
-		"zoom_in": [KEY_EQUAL, KEY_KP_ADD],
-		"zoom_out": [KEY_MINUS, KEY_KP_SUBTRACT],
-	}
-	for action in keys:
-		if InputMap.has_action(action):
-			continue
-		InputMap.add_action(action)
-		for keycode in keys[action]:
-			var event := InputEventKey.new()
-			event.physical_keycode = keycode
-			InputMap.action_add_event(action, event)
-
 
 func _build_sprite_layers() -> void:
 	var prefixes: Array[String] = ["base"]

@@ -55,6 +55,14 @@ const EARTH_FACE := Vector2i(11, 4) # the brown drop between grass and water on 
 const FENCE_LEFT := Vector2i(38, 2)
 const FENCE_MIDDLE := Vector2i(39, 2)
 const FENCE_RIGHT := Vector2i(42, 2)
+# Fence corners and sides for the animal pen
+const FENCE_TOP_LEFT := Vector2i(42, 1)
+const FENCE_TOP_RIGHT := Vector2i(41, 1)
+const FENCE_BOTTOM_LEFT := Vector2i(39, 1)
+const FENCE_BOTTOM_RIGHT := Vector2i(38, 1)
+const FENCE_SIDE := Vector2i(40, 3)
+const PEN_SIZE := Vector2i(10, 7) # tiles, fence included
+const TROUGH := {"origin": Vector2i(37, 17), "size": Vector2i(2, 1)}
 const DOCK_PLANK := Vector2i(40, 5)
 const DOCK_END := Vector2i(40, 6)
 const DOCK_POST_LEFT := Vector2i(39, 5)
@@ -119,11 +127,39 @@ const MARKET_CRATE := "res://assets/Sunnyside_World_Assets/Elements/Crops/crate_
 const MARKET_PRODUCE: Array[String] = ["pumpkin", "carrot", "cabbage"]
 const STATUE := {"origin": Vector2i(44, 18), "size": Vector2i(2, 4), "solid_rows": 2}
 
+# Raised ground (plateaus): grass edge lines around the top, a 2-tile brown cliff face
+# below the front (south) edge with shaded ends, darker grass at its foot, and ramps
+# (darker grassy slopes) cut into the cliff to walk up and down.
+const CLIFF_SHADOW := Vector2i(0, 3) # grass at the foot of a cliff
+# The rocky cliff face is our own tile sheet (assets/cliffs/cliffs.png, drawn by
+# tools/make_cliff_tiles.py), added to the TileSet as a second source. Each piece is
+# 2 tiles tall: atlas row 0 = upper half (with the grass lip), row 1 = lower half.
+const CLIFF_SOURCE := 1
+const CLIFF_SHEET := "res://assets/cliffs/cliffs.png"
+const CLIFF_VARIANTS := 4 # columns 0-3, they join seamlessly in order (x % 4)
+const CLIFF_LEFT_END := 4
+const CLIFF_RIGHT_END := 5
+const CLIFF_LADDER := 6
+# Edges of a plateau's top, one piece per direction (in the same sheet)
+const CLIFF_BACK_LEFT := Vector2i(7, 0)
+const CLIFF_BACK := Vector2i(8, 0)
+const CLIFF_BACK_RIGHT := Vector2i(9, 0)
+const CLIFF_SIDE_LEFT := Vector2i(7, 1)
+const CLIFF_SIDE_RIGHT := Vector2i(9, 1)
+# Path edges: see-through pieces laid over every path tile so the grass creeps in with a
+# wobbly, rounded edge (assets/paths/paths.png, drawn by tools/make_path_tiles.py).
+# Column = sides with grass (1 N, 2 E, 4 S, 8 W), row = corners with grass (1 NE, 2 SE,
+# 4 SW, 8 NW); row 16 has pebbles.
+const PATH_SOURCE := 2
+const PATH_SHEET := "res://assets/paths/paths.png"
+const PEBBLE_CHANCE := 0.14
+const HILL_COUNT := 4 # little hills scattered around the countryside
+
 ## Named places: center as a fraction of the map size, radius in tiles.
 ## The forest is the band along the top of the map instead (see _forest_edge).
 const LOCATIONS := {
 	"farm": {"name": "Your Farm", "center": Vector2(0.30, 0.56), "radius": Vector2(13, 10)},
-	"village": {"name": "Willowbrook Village", "center": Vector2(0.64, 0.47), "radius": Vector2(14, 11)},
+	"village": {"name": "Willowbrook Village", "center": Vector2(0.64, 0.47), "radius": Vector2(24, 17)},
 	"lake": {"name": "Mirror Lake", "center": Vector2(0.80, 0.80), "radius": Vector2(17, 10)},
 	"meadow": {"name": "Sunny Meadow", "center": Vector2(0.13, 0.82), "radius": Vector2(13, 9)},
 }
@@ -134,6 +170,10 @@ const FOREST_NAME := "Pinewood Forest"
 const COLLISION_RECTS := {
 	Vector2i(38, 2): Rect2(4, 8, 12, 5), Vector2i(39, 2): Rect2(0, 8, 16, 5), # fence
 	Vector2i(42, 2): Rect2(0, 8, 12, 5),
+	Vector2i(42, 1): Rect2(5, 8, 11, 8), Vector2i(41, 1): Rect2(0, 8, 11, 8), # pen corners
+	Vector2i(39, 1): Rect2(5, 0, 11, 13), Vector2i(38, 1): Rect2(0, 0, 11, 13),
+	Vector2i(40, 3): Rect2(5, 0, 6, 16), # pen sides
+	Vector2i(37, 17): Rect2(4, 2, 12, 12), Vector2i(38, 17): Rect2(0, 2, 12, 12), # trough
 	Vector2i(49, 2): Rect2(6, 0, 10, 7), Vector2i(50, 2): Rect2(0, 0, 10, 7), # round bush
 	Vector2i(49, 4): Rect2(6, 0, 10, 7), Vector2i(50, 4): Rect2(0, 0, 10, 7), # apple bush
 	Vector2i(49, 6): Rect2(6, 0, 10, 7), Vector2i(50, 6): Rect2(0, 0, 10, 7), # orange bush
@@ -188,6 +228,13 @@ var _changes: Array = [] # trees felled and plants cut this game (saved, replaye
 @export_storage var market_cell := Vector2i(-1, -1)
 ## The lake dock's tiles (you walk on it instead of swimming)
 @export_storage var dock_cells := Rect2i()
+## The animal pen next to your house (fence included) and its trough
+@export_storage var pen_rect := Rect2i()
+@export_storage var trough_cell := Vector2i()
+## Raised ground: one rectangle per plateau (the village's upper level, hills)
+@export_storage var plateaus: Array[Rect2i] = []
+## Ramps: the columns of a cliff you can walk through, as rectangles over the cliff face
+@export_storage var ramps: Array[Rect2i] = []
 
 var _rng := RandomNumberGenerator.new()
 var _blocked := {} # cells that already have a path, water or object
@@ -200,8 +247,10 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	_setup_houses()
+	_setup_cliff_walls()
 	_add_water_effects()
 	_spawn_farm()
+	_spawn_ranch()
 	_spawn_clock()
 	_spawn_merchant()
 	_spawn_story_characters()
@@ -235,24 +284,31 @@ func generate() -> void:
 	_fix_layers()
 
 	_source = ground.tile_set.get_source(SOURCE_ID) as TileSetAtlasSource
+	_setup_cliff_source(ground.tile_set)
+	_setup_path_source(ground.tile_set)
 	for layer in [ground, decor]:
 		_setup_collision(layer.tile_set)
 
 	clear()
 	houses.clear()
 	_fill_grass(ground)
-	var layers := {"ground": ground, "decor": decor, "canopy": canopy, "roofs": roofs}
+	var layers := {"ground": ground, "decor": decor, "canopy": canopy, "roofs": roofs, "shore": shore}
 	_make_home(layers)
+	_make_pen(decor)
 	_make_lake(ground)
+	plateaus.clear()
+	ramps.clear()
 	var plaza := _make_village(layers)
 	_make_roads(ground, decor, plaza)
 	_connect_doors(ground, decor)
 	for i in pond_count:
 		_make_pond(ground)
+	_make_hills(ground, shore)
 	_decorate_water(ground, shore, sides)
 	var dock := _make_dock(ground, shore, decor)
 	_make_lake_fence(ground, shore, decor, dock)
 	_scatter_objects(decor, canopy)
+	_decorate_paths(ground, shore, sides)
 	print("SmallWorld map generated (seed %d)" % _rng.seed)
 
 
@@ -322,8 +378,41 @@ func _paint_path(ground: TileMapLayer, decor: TileMapLayer, cell: Vector2i) -> v
 	for house in houses:
 		if house["rect"].has_point(cell):
 			return # never through a house (its floor isn't on Decor)
+	if pen_rect.has_point(cell):
+		return # or the animal pen
+	if _is_cliff(cell):
+		return # roads don't run up cliff faces (ramps are fine)
 	ground.set_cell(cell, SOURCE_ID, PATH_TILES[_rng.randi() % PATH_TILES.size()])
 	_blocked[cell] = true
+
+
+## A fenced pen for animals left of your house, gate at the bottom, trough inside.
+func _make_pen(decor: TileMapLayer) -> void:
+	var home: Rect2i = houses[0]["rect"]
+	pen_rect = Rect2i(home.position + Vector2i(-PEN_SIZE.x - 2, 0), PEN_SIZE)
+	var gate := [PEN_SIZE.x / 2 - 1, PEN_SIZE.x / 2]
+	for x in PEN_SIZE.x:
+		for y in PEN_SIZE.y:
+			var cell := pen_rect.position + Vector2i(x, y)
+			_blocked[cell] = true # nothing grows inside
+			var last_x := x == PEN_SIZE.x - 1
+			var last_y := y == PEN_SIZE.y - 1
+			var piece := Vector2i(-1, -1)
+			if y == 0:
+				piece = FENCE_TOP_LEFT if x == 0 else (FENCE_TOP_RIGHT if last_x else FENCE_MIDDLE)
+			elif last_y:
+				if x == 0: piece = FENCE_BOTTOM_LEFT
+				elif last_x: piece = FENCE_BOTTOM_RIGHT
+				elif gate.has(x): continue # opening to walk in
+				elif gate.has(x + 1): piece = FENCE_RIGHT # end posts either side of the gate
+				elif gate.has(x - 1): piece = FENCE_LEFT
+				else: piece = FENCE_MIDDLE
+			elif x == 0 or last_x:
+				piece = FENCE_SIDE
+			if piece.x >= 0:
+				_set_tile(decor, cell, piece)
+	trough_cell = pen_rect.position + Vector2i(2, 1)
+	_place_tiles(decor, trough_cell, TROUGH)
 
 
 func _make_home(layers: Dictionary) -> void:
@@ -442,25 +531,228 @@ func _make_village(layers: Dictionary) -> Vector2i:
 		for y in range(-2, 3):
 			_blocked[market_cell + Vector2i(x, y)] = true # keep the area around it clear
 
-	# Houses in random colours: three north of the plaza facing it, two south
+	# Upper Willowbrook: a plateau behind the plaza, its cliff just above the plaza,
+	# with a ramp in the middle down to the plaza
+	var upper := Rect2i(c + Vector2i(-21, -18), Vector2i(43, 11)) # front edge on row c.y - 8
+	var ramp := Rect2i(c.x - 1, upper.end.y, 2, 2)
+	_add_plateau(ground, layers["shore"], upper, [ramp])
+	# Its street runs along the front edge; the ramp carries it down to the plaza
+	for x in range(-19, 20):
+		for y in [-9, -8]:
+			_paint_path(ground, decor, c + Vector2i(x, y))
+	for x in range(ramp.position.x, ramp.end.x):
+		_paint_path(ground, decor, Vector2i(x, ramp.end.y)) # the foot of the ramp joins the plaza
+
+	# Houses in random colours: five up on the plateau along its street, two below the plaza
 	var colours := HOUSE_COLOURS.slice(1)
 	var first := _rng.randi() % colours.size()
 	var spots: Array[Vector2i] = [
-		Vector2i(-11, -11), Vector2i(-3, -11), Vector2i(5, -11), Vector2i(-9, 6), Vector2i(3, 6),
+		Vector2i(-20, -15), Vector2i(-12, -15), Vector2i(-4, -15), Vector2i(4, -15), Vector2i(12, -15),
+		Vector2i(-9, 6), Vector2i(3, 6),
 	]
 	for i in spots.size():
 		_build_house(layers, c + spots[i], 4, colours[(first + i) % colours.size()], _rng.randf() < CHIMNEY_CHANCE)
 	return c
 
 
+# --- Levels: plateaus, cliffs and ramps ----------------------------------------
+
+## True if the tile is on raised ground.
+func is_high(cell: Vector2i) -> bool:
+	for rect in plateaus:
+		if rect.has_point(cell):
+			return true
+	return false
+
+
+## True for the two cliff rows below a plateau's front edge (not counting ramps).
+func _is_cliff(cell: Vector2i) -> bool:
+	if is_high(cell):
+		return false
+	if not (is_high(cell + Vector2i(0, -1)) or (is_high(cell + Vector2i(0, -2)) and not is_high(cell + Vector2i(0, -1)))):
+		return false
+	for ramp in ramps:
+		if ramp.has_point(cell):
+			return false
+	return true
+
+
+## Raises a rectangle of ground and draws its edges, cliff face and ramps on the Ground layer.
+## Adds the cliff tile sheet to the TileSet (once) as source CLIFF_SOURCE.
+func _setup_cliff_source(tile_set: TileSet) -> void:
+	var cliffs: TileSetAtlasSource
+	if tile_set.has_source(CLIFF_SOURCE):
+		cliffs = tile_set.get_source(CLIFF_SOURCE)
+	else:
+		cliffs = TileSetAtlasSource.new()
+		cliffs.texture = load(CLIFF_SHEET)
+		cliffs.texture_region_size = Vector2i(16, 16)
+		tile_set.add_source(cliffs, CLIFF_SOURCE)
+	# The sheet may have grown since: make sure every piece exists
+	for x in cliffs.texture.get_width() / 16:
+		for y in 2:
+			if not cliffs.has_tile(Vector2i(x, y)):
+				cliffs.create_tile(Vector2i(x, y))
+
+
+## Adds the path edge sheet to the TileSet (once) as source PATH_SOURCE.
+func _setup_path_source(tile_set: TileSet) -> void:
+	var paths: TileSetAtlasSource
+	if tile_set.has_source(PATH_SOURCE):
+		paths = tile_set.get_source(PATH_SOURCE)
+	else:
+		paths = TileSetAtlasSource.new()
+		paths.texture = load(PATH_SHEET)
+		paths.texture_region_size = Vector2i(16, 16)
+		tile_set.add_source(paths, PATH_SOURCE)
+	for x in paths.texture.get_width() / 16:
+		for y in paths.texture.get_height() / 16:
+			if not paths.has_tile(Vector2i(x, y)):
+				paths.create_tile(Vector2i(x, y))
+
+
+## Soft edges for every path: each path tile gets the edge piece that matches where
+## the grass is around it, and some get a few pebbles.
+func _decorate_paths(ground: TileMapLayer, edges_layer: TileMapLayer, pebbles_layer: TileMapLayer) -> void:
+	var is_path := func(c: Vector2i) -> bool:
+		return ground.get_cell_source_id(c) == SOURCE_ID and PATH_TILES.has(ground.get_cell_atlas_coords(c))
+	# Grass creeps in only from plain grass (not from cliffs, water, houses or the dock)
+	var is_grass := func(c: Vector2i) -> bool:
+		if is_path.call(c) or edges_layer.get_cell_source_id(c) != -1:
+			return false
+		var tile := ground.get_cell_atlas_coords(c)
+		return tile == GRASS or GRASS_VARIANTS.has(tile) or tile == CLIFF_SHADOW
+	for cell in ground.get_used_cells():
+		if not is_path.call(cell) or edges_layer.get_cell_source_id(cell) != -1:
+			continue
+		var sides := 0
+		for bit_dir in [[1, Vector2i(0, -1)], [2, Vector2i(1, 0)], [4, Vector2i(0, 1)], [8, Vector2i(-1, 0)]]:
+			if is_grass.call(cell + bit_dir[1]):
+				sides |= bit_dir[0]
+		var corners := 0
+		for bit_dir in [[1, Vector2i(1, -1)], [2, Vector2i(1, 1)], [4, Vector2i(-1, 1)], [8, Vector2i(-1, -1)]]:
+			if is_grass.call(cell + bit_dir[1]):
+				corners |= bit_dir[0]
+		if sides != 0 or corners != 0:
+			edges_layer.set_cell(cell, PATH_SOURCE, Vector2i(sides, corners))
+		if _rng.randf() < PEBBLE_CHANCE and pebbles_layer.get_cell_source_id(cell) == -1:
+			pebbles_layer.set_cell(cell, PATH_SOURCE, Vector2i(_rng.randi() % 4, 16))
+
+
+## Raises a rectangle of ground and draws its edges, rocky cliff face and ways up.
+## A ramp 1 tile wide is a ladder; wider ramps are a dirt path cut through the cliff.
+func _add_plateau(ground: TileMapLayer, overlay: TileMapLayer, rect: Rect2i, plateau_ramps: Array) -> void:
+	plateaus.append(rect)
+	for ramp in plateau_ramps:
+		ramps.append(ramp)
+	var ramp_at := func(x: int) -> Rect2i:
+		for ramp in plateau_ramps:
+			if x >= ramp.position.x and x < ramp.end.x:
+				return ramp
+		return Rect2i()
+	for x in range(rect.position.x - 1, rect.end.x + 1):
+		for y in range(rect.position.y - 1, rect.end.y + 3):
+			var cell := Vector2i(x, y)
+			if rect.has_point(cell):
+				# One edge piece per direction: outlined back, rock strip down each side
+				# (the front gets the cliff face's grass lip instead)
+				var piece := Vector2i(-1, -1)
+				var left := x == rect.position.x
+				var right := x == rect.end.x - 1
+				if y == rect.position.y:
+					piece = CLIFF_BACK_LEFT if left else (CLIFF_BACK_RIGHT if right else CLIFF_BACK)
+				elif left:
+					piece = CLIFF_SIDE_LEFT
+				elif right:
+					piece = CLIFF_SIDE_RIGHT
+				if piece.x >= 0:
+					_set_tile(ground, cell, GRASS)
+					overlay.set_cell(cell, CLIFF_SOURCE, piece)
+					_blocked[cell] = true
+				continue
+			if x < rect.position.x or x >= rect.end.x or y < rect.end.y:
+				continue
+			# Below the front edge: two rows of cliff (or a way up), then a shadow row
+			var row := y - rect.end.y
+			var ramp: Rect2i = ramp_at.call(x)
+			if row < 2:
+				_set_tile(ground, cell, GRASS) # under the rock (its rounded corners show it)
+				var column := x % CLIFF_VARIANTS
+				if ramp.size.x == 1:
+					column = CLIFF_LADDER
+				elif ramp.size.x > 1:
+					ground.set_cell(cell, SOURCE_ID, PATH_TILES[0]) # a path cut through the cliff
+					column = -1
+				elif x == rect.position.x or ramp_at.call(x - 1).size.x > 1:
+					column = CLIFF_LEFT_END # also frames the right side of a path cut
+				elif x == rect.end.x - 1 or ramp_at.call(x + 1).size.x > 1:
+					column = CLIFF_RIGHT_END
+				if column >= 0:
+					overlay.set_cell(cell, CLIFF_SOURCE, Vector2i(column, row))
+			elif ramp.size.x == 0:
+				_set_tile(ground, cell, CLIFF_SHADOW)
+			_blocked[cell] = true
+
+
+## A few hills in the open countryside, each with a ladder up its front.
+func _make_hills(ground: TileMapLayer, overlay: TileMapLayer) -> void:
+	var made := 0
+	for attempt in 200:
+		if made >= HILL_COUNT:
+			return
+		var size := Vector2i(_rng.randi_range(8, 14), _rng.randi_range(5, 8))
+		var corner := Vector2i(
+			_rng.randi_range(BORDER + 2, map_width - size.x - BORDER - 2),
+			_rng.randi_range(BORDER + 2, map_height - size.y - BORDER - 5))
+		var ok := true
+		for x in range(corner.x - 2, corner.x + size.x + 2):
+			for y in range(corner.y - 2, corner.y + size.y + 4):
+				var cell := Vector2i(x, y)
+				if _blocked.has(cell) or location_at(cell) != "":
+					ok = false # only on free countryside, away from roads, water and buildings
+		if not ok:
+			continue
+		var ladder_x := corner.x + _rng.randi_range(1, size.x - 2)
+		_add_plateau(ground, overlay, Rect2i(corner, size), [Rect2i(ladder_x, corner.y + size.y, 1, 2)])
+		made += 1
+
+
+## Invisible walls along every cliff: around a plateau's top edges and over its cliff face,
+## with gaps at the ramps. Built when the game starts.
+func _setup_cliff_walls() -> void:
+	if plateaus.is_empty():
+		return
+	var walls := StaticBody2D.new()
+	walls.name = "CliffWalls"
+	add_child(walls)
+	var add_wall := func(r: Rect2):
+		var shape := RectangleShape2D.new()
+		shape.size = r.size
+		var collision := CollisionShape2D.new()
+		collision.shape = shape
+		collision.position = r.get_center()
+		walls.add_child(collision)
+	for rect in plateaus:
+		var top_left := cell_to_world(rect.position) - Vector2(8, 8)
+		var size := Vector2(rect.size * 16)
+		add_wall.call(Rect2(top_left, Vector2(size.x, 3))) # back edge
+		add_wall.call(Rect2(top_left, Vector2(3, size.y))) # left edge
+		add_wall.call(Rect2(top_left + Vector2(size.x - 3, 0), Vector2(3, size.y))) # right edge
+		# The cliff face below the front edge, except where a ramp goes through
+		for x in range(rect.position.x, rect.end.x):
+			if _is_cliff(Vector2i(x, rect.end.y)):
+				add_wall.call(Rect2(cell_to_world(Vector2i(x, rect.end.y)) - Vector2(8, 8), Vector2(16, 30)))
+
+
 func _make_roads(ground: TileMapLayer, decor: TileMapLayer, plaza: Vector2i) -> void:
 	var home := home_spawn_cell()
 	var lake := location_center("lake")
 	var lake_radius: Vector2 = LOCATIONS["lake"]["radius"]
-	var north := Vector2i(plaza.x + 13, int(_forest_edge(plaza.x + 13)) + 1)
+	var north := Vector2i(plaza.x + 24, int(_forest_edge(plaza.x + 24)) + 1)
 	_carve_road(ground, decor, home, plaza + Vector2i(-7, 0)) # farm -> village
 	_carve_road(ground, decor, plaza + Vector2i(6, 1), lake - Vector2i(0, int(lake_radius.y) - 1)) # village -> lake
-	_carve_road(ground, decor, plaza + Vector2i(13, 1), north) # village -> forest
+	_carve_road(ground, decor, plaza + Vector2i(6, 1), plaza + Vector2i(24, 1)) # east, past the upper village
+	_carve_road(ground, decor, plaza + Vector2i(24, 1), north) # village -> forest
 	_carve_road(ground, decor, home + Vector2i(0, 2), location_center("meadow")) # farm -> meadow
 
 
@@ -654,7 +946,8 @@ func _setup_collision(tile_set: TileSet) -> void:
 
 func _building_defs() -> Array:
 	return [WELL, STATUE, BED, RUG,
-		{"origin": Vector2i(38, 2), "size": Vector2i(5, 1)}, # fence pieces
+		{"origin": Vector2i(38, 1), "size": Vector2i(5, 2)}, # fence pieces and corners
+		{"origin": Vector2i(40, 3), "size": Vector2i(1, 1)}, TROUGH,
 		{"origin": Vector2i(42, 33), "size": Vector2i(6, 2)}, # all shelves
 	]
 
@@ -1105,6 +1398,9 @@ func _spawn_clock() -> void:
 	var farm := get_node_or_null("Farm")
 	if farm:
 		clock.new_day.connect(farm.on_new_day)
+	var ranch := get_node_or_null("Ranch")
+	if ranch:
+		clock.new_day.connect(ranch.on_new_day)
 	var player := get_node_or_null("Player")
 	if player and player.has_method("on_passed_out"):
 		clock.passed_out.connect(player.on_passed_out)
@@ -1191,6 +1487,23 @@ func _spawn_story_characters() -> void:
 		add_child(npc)
 		if player:
 			move_child(npc, player.get_index())
+
+
+func _spawn_ranch() -> void:
+	if pen_rect.size == Vector2i.ZERO:
+		return
+	var ranch := Node2D.new()
+	ranch.set_script(load("res://scripts/ranch.gd"))
+	ranch.name = "Ranch"
+	# Animals stay a tile away from the fence; the trough row is off limits too
+	var inside := Rect2i(pen_rect.position + Vector2i(1, 2), pen_rect.size - Vector2i(2, 3))
+	var top_left := cell_to_world(inside.position) - Vector2(4, 4)
+	ranch.pen = Rect2(top_left, Vector2(inside.size * 16) - Vector2(8, 8))
+	ranch.trough = cell_to_world(trough_cell) + Vector2(8, 0)
+	add_child(ranch)
+	var player := get_node_or_null("Player")
+	if player:
+		move_child(ranch, player.get_index()) # animals walk under the player
 
 
 func _spawn_farm() -> void:

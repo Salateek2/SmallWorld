@@ -9,7 +9,10 @@ const Farm := preload("res://scripts/farm.gd")
 ## Things you can sell that aren't crops
 const EXTRA_ITEMS := {
 	"fish": {"sell": 15, "icon": "res://assets/Sunnyside_World_Assets/Elements/Crops/fish.png"},
+	"egg": {"sell": 25, "icon": "res://assets/Sunnyside_World_Assets/Elements/Crops/egg.png"},
+	"milk": {"sell": 60, "icon": "res://assets/Sunnyside_World_Assets/Elements/Crops/milk.png"},
 }
+const Ranch := preload("res://scripts/ranch.gd")
 
 var player: Node ## the player opening the shop (has coins, crops, seeds)
 
@@ -99,6 +102,16 @@ func refresh() -> void:
 		_button(row, "Buy 1", _buy.bind(crop, 1), player.coins >= data["seed"])
 		_button(row, "Buy 5", _buy.bind(crop, 5), player.coins >= data["seed"] * 5)
 
+	# Animals go straight to the pen next to your house
+	var ranch := _ranch()
+	if ranch:
+		for type in Ranch.TYPES:
+			var info: Dictionary = Ranch.TYPES[type]
+			var row := _row(_buy_list, _animal_icon(type), info["name"],
+					"%dc - gives %s when fed - you have %d" % [info["price"], info["product"], ranch.count(type)])
+			var can_buy: bool = player.coins >= info["price"] and not ranch.is_full()
+			_button(row, "Buy", _buy_animal.bind(type), can_buy)
+
 	# Keyboard users: put focus on the first button
 	await get_tree().process_frame
 	var first := _find_button(self)
@@ -123,6 +136,29 @@ func _buy(crop: String, amount: int) -> void:
 	player.seeds[crop] = player.seeds.get(crop, 0) + amount
 	player.refresh_ui()
 	refresh()
+
+
+func _buy_animal(type: String) -> void:
+	var price: int = Ranch.TYPES[type]["price"]
+	var ranch := _ranch()
+	if ranch == null or player.coins < price or not ranch.add_animal(type):
+		return
+	player.coins -= price
+	player.refresh_ui()
+	player.notify("A new %s is waiting in your pen!" % Ranch.TYPES[type]["name"].to_lower())
+	refresh()
+
+
+func _ranch() -> Node:
+	return player.get_parent().get_node_or_null("Ranch")
+
+
+## First frame of the animal's animation, as a shop icon.
+func _animal_icon(type: String) -> Texture2D:
+	var atlas := AtlasTexture.new()
+	atlas.atlas = load(Ranch.ANIMALS_DIR + Ranch.TYPES[type]["strip"])
+	atlas.region = Rect2(4, 4, 24, 24)
+	return atlas
 
 
 func _price(item: String) -> int:

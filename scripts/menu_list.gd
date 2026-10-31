@@ -26,6 +26,7 @@ func add_option(id: String, text: String, enabled := true) -> void:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(380, 0)
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND # glove cursor
 	var label := Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

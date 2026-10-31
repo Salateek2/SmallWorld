@@ -119,9 +119,11 @@ func _collect(tab: int) -> Array[Dictionary]:
 					list.append({"name": crop.capitalize(), "kind": "Crop", "count": count,
 						"icon": Farm.crop_texture(crop, Farm.STAGES), "crop": crop,
 						"text": "Sells for %dc at the market." % Farm.CROP_DATA[crop]["sell"]})
-			if player.crops.get("fish", 0) > 0:
-				list.append({"name": "Fish", "kind": "Catch", "count": player.crops["fish"],
-					"icon": load(CROPS + "fish.png"), "text": "Fresh from the water. Sells for 15c."})
+			for item in OTHER_ITEMS:
+				if player.crops.get(item, 0) > 0:
+					var info: Dictionary = OTHER_ITEMS[item]
+					list.append({"name": item.capitalize(), "kind": info["kind"], "count": player.crops[item],
+						"icon": load(CROPS + item + ".png"), "text": info["text"]})
 			if player.wood > 0:
 				list.append({"name": "Wood", "kind": "Material", "count": player.wood,
 					"icon": load(CROPS + "wood.png"), "text": "From chopping pine trees. Good for building."})
@@ -147,6 +149,13 @@ func _collect(tab: int) -> Array[Dictionary]:
 				"text": "Runs the market south of the statue.\nBuys crops and fish, sells seeds."})
 	return list
 
+
+## Items that aren't crops: name -> what the info card says
+const OTHER_ITEMS := {
+	"fish": {"kind": "Catch", "text": "Fresh from the water. Sells for 15c."},
+	"egg": {"kind": "Animal product", "text": "Laid by a well-fed chicken. Sells for 25c."},
+	"milk": {"kind": "Animal product", "text": "From a well-fed cow. Sells for 60c."},
+}
 
 const TOOL_TEXT := [
 	"Chop pine trees for wood. Three hits fell a tree.",

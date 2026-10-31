@@ -27,6 +27,7 @@ func save_game() -> bool:
 		"clock": {"day": world.get_node("DayNight").day, "minutes": world.get_node("DayNight").minutes},
 		"map": world.get_changes(),
 		"story": Story.get_state(),
+		"ranch": world.get_node("Ranch").get_state() if world.has_node("Ranch") else [],
 	}
 	var file := FileAccess.open(PATH, FileAccess.WRITE)
 	if file == null:
@@ -52,6 +53,8 @@ func apply(world: Node) -> void:
 	clock.day = int(data["clock"]["day"])
 	clock.minutes = float(data["clock"]["minutes"])
 	Story.set_state(data.get("story", {}))
+	if world.has_node("Ranch"):
+		world.get_node("Ranch").set_state(data.get("ranch", []))
 	world.get_node("Player").set_state(data["player"])
 
 

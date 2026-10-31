@@ -200,6 +200,7 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	_setup_houses()
+	_add_water_effects()
 	_spawn_farm()
 	_spawn_clock()
 	_spawn_merchant()
@@ -584,6 +585,13 @@ func _make_dock(ground: TileMapLayer, shore: TileMapLayer, decor: TileMapLayer) 
 			_set_tile(decor, cell + Vector2i(-1, 0), DOCK_POST_LEFT)
 			_set_tile(decor, cell + Vector2i(1, 0), DOCK_POST_RIGHT)
 	dock_cells = Rect2i(x, top - 1, 1, DOCK_LENGTH + 1)
+	# The 2-wide road narrows to a 1-tile footpath lined up with the dock
+	for y in range(top - 4, top - 1):
+		for dx in [-2, -1, 1, 2]:
+			var side := Vector2i(x + dx, y)
+			if PATH_TILES.has(ground.get_cell_atlas_coords(side)):
+				ground.set_cell(side, SOURCE_ID, GRASS)
+		ground.set_cell(Vector2i(x, y), SOURCE_ID, PATH_TILES[0])
 	return x
 
 
@@ -596,19 +604,9 @@ func _make_lake_fence(ground: TileMapLayer, shore: TileMapLayer, decor: TileMapL
 			var below := cell + Vector2i(0, 1)
 			if location_at(below) != "lake" or shore.get_cell_atlas_coords(below) != EARTH_FACE:
 				continue
-			if absi(x - dock_x) <= 1 or PATH_TILES.has(ground.get_cell_atlas_coords(cell)):
-				continue # gap for the dock and the road
+			if x == dock_x or PATH_TILES.has(ground.get_cell_atlas_coords(cell)):
+				continue # gap for the path onto the dock
 			fence_cells.append(cell)
-	# Always a fence either side of the dock's entrance, along the top of the shore
-	if dock_x >= 0:
-		var y := dock_cells.position.y - 1
-		for side in [-1, 1]:
-			for i in range(2, 8):
-				var cell := Vector2i(dock_x + side * i, y)
-				if WATER_TILES.has(ground.get_cell_atlas_coords(cell)) or PATH_TILES.has(ground.get_cell_atlas_coords(cell)) 						or decor.get_cell_source_id(cell) != -1 or shore.get_cell_source_id(cell) != -1:
-					break
-				if not fence_cells.has(cell):
-					fence_cells.append(cell)
 	# Join neighbours into runs with an end post on each side (short bits look odd: skipped)
 	for cell in fence_cells:
 		if fence_cells.has(cell + Vector2i(-1, 0)):
@@ -1149,6 +1147,32 @@ func _spawn_merchant() -> void:
 	if player:
 		move_child(merchant, player.get_index())
 		move_child(stall, player.get_index()) # drawn over the merchant's feet: he's behind it
+
+
+## Moving water (shader on the Ground layer), sparkles on the water and ducks on the lake.
+func _add_water_effects() -> void:
+	var ground := get_node("Ground") as TileMapLayer
+	var material := ShaderMaterial.new()
+	material.shader = load("res://shaders/water.gdshader")
+	ground.material = material
+
+	var shore := get_node_or_null("Shore") as TileMapLayer
+	var sides := get_node_or_null("ShoreSides") as TileMapLayer
+	var life := Node2D.new()
+	life.set_script(load("res://scripts/water_life.gd"))
+	life.name = "WaterLife"
+	for cell in ground.get_used_cells_by_id(SOURCE_ID, WATER_TILES[0]):
+		var edge := (sides and sides.get_cell_source_id(cell) != -1) 				or (shore and not WATER_FLECKS.has(shore.get_cell_atlas_coords(cell)) and shore.get_cell_source_id(cell) != -1)
+		if edge or dock_cells.has_point(cell):
+			continue # only open water, away from the edges and the dock
+		var spot := cell_to_world(cell)
+		life.water_spots.append(spot)
+		if location_at(cell) == "lake":
+			life.lake_spots.append(spot)
+	add_child(life)
+	var decor := get_node_or_null("Decor")
+	if decor:
+		move_child(life, decor.get_index()) # on the water, under everything standing on land
 
 
 ## Characters from story_text.gd, standing in their locations.

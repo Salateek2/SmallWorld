@@ -136,6 +136,8 @@ func _collect(tab: int) -> Array[Dictionary]:
 						"text": "Plant on dug soil and water every day.\nRipe in %d days." % data["nights"]})
 		Tab.TOOLS:
 			for t in player.Tool.size():
+				if not player.owned_tools.has(t):
+					continue # only tools you actually have
 				var info := {"name": player.TOOL_NAMES[t], "kind": "Tool  (key %d)" % (t + 1), "tool": t,
 					"text": TOOL_TEXT[t], "count": 0}
 				if player.TOOL_ICONS.has(t):

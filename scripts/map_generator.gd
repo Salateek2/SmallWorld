@@ -63,6 +63,12 @@ const FENCE_BOTTOM_RIGHT := Vector2i(38, 1)
 const FENCE_SIDE := Vector2i(40, 3)
 const PEN_SIZE := Vector2i(10, 7) # tiles, fence included
 const TROUGH := {"origin": Vector2i(37, 17), "size": Vector2i(2, 1)}
+# The smithy's work yard
+const ANVIL := {"origin": Vector2i(37, 18), "size": Vector2i(2, 1)}
+const FORGE := {"origin": Vector2i(39, 17), "size": Vector2i(2, 2)} # furnace + stone chimney
+const BARREL_OPEN := Vector2i(40, 16)
+const BARREL_WATER := Vector2i(38, 16)
+const FORGE_FIRE := "res://assets/Sunnyside_World_Assets/Elements/VFX/Fire/spr_deco_fire_02_strip4.png"
 const DOCK_PLANK := Vector2i(40, 5)
 const DOCK_END := Vector2i(40, 6)
 const DOCK_POST_LEFT := Vector2i(39, 5)
@@ -174,6 +180,9 @@ const COLLISION_RECTS := {
 	Vector2i(39, 1): Rect2(5, 0, 11, 13), Vector2i(38, 1): Rect2(0, 0, 11, 13),
 	Vector2i(40, 3): Rect2(5, 0, 6, 16), # pen sides
 	Vector2i(37, 17): Rect2(4, 2, 12, 12), Vector2i(38, 17): Rect2(0, 2, 12, 12), # trough
+	Vector2i(37, 18): Rect2(5, 2, 11, 9), Vector2i(38, 18): Rect2(0, 2, 10, 9), # anvil
+	Vector2i(39, 18): Rect2(3, 0, 13, 14), Vector2i(40, 18): Rect2(0, 0, 11, 14), # forge
+	Vector2i(38, 16): Rect2(3, 4, 10, 10), Vector2i(40, 16): Rect2(3, 4, 10, 10), # barrels
 	Vector2i(49, 2): Rect2(6, 0, 10, 7), Vector2i(50, 2): Rect2(0, 0, 10, 7), # round bush
 	Vector2i(49, 4): Rect2(6, 0, 10, 7), Vector2i(50, 4): Rect2(0, 0, 10, 7), # apple bush
 	Vector2i(49, 6): Rect2(6, 0, 10, 7), Vector2i(50, 6): Rect2(0, 0, 10, 7), # orange bush
@@ -231,6 +240,8 @@ var _changes: Array = [] # trees felled and plants cut this game (saved, replaye
 ## The animal pen next to your house (fence included) and its trough
 @export_storage var pen_rect := Rect2i()
 @export_storage var trough_cell := Vector2i()
+## The smithy's furnace (its fire and chimney smoke are added when the game starts)
+@export_storage var forge_cell := Vector2i(-1, -1)
 ## Raised ground: one rectangle per plateau (the village's upper level, hills)
 @export_storage var plateaus: Array[Rect2i] = []
 ## Ramps: the columns of a cliff you can walk through, as rectangles over the cliff face
@@ -246,6 +257,7 @@ func _ready() -> void:
 	_fix_layers()
 	if Engine.is_editor_hint():
 		return
+	_add_forge_fire()
 	_setup_houses()
 	_setup_cliff_walls()
 	_add_water_effects()
@@ -552,7 +564,26 @@ func _make_village(layers: Dictionary) -> Vector2i:
 	]
 	for i in spots.size():
 		_build_house(layers, c + spots[i], 4, colours[(first + i) % colours.size()], _rng.randf() < CHIMNEY_CHANCE)
+	_make_smithy(layers, c + Vector2i(-22, 4))
 	return c
+
+
+## Gus's smithy: his house, and beside it a dirt work yard with the forge against the
+## house wall, an anvil (Gus hammers at it), the trough and a couple of barrels.
+func _make_smithy(layers: Dictionary, house_corner: Vector2i) -> void:
+	var ground: TileMapLayer = layers["ground"]
+	var decor: TileMapLayer = layers["decor"]
+	_build_house(layers, house_corner, 4, HOUSE_COLOURS[3], false) # red roof
+	var yard := Rect2i(house_corner + Vector2i(6, 1), Vector2i(7, 6))
+	for x in range(yard.position.x, yard.end.x):
+		for y in range(yard.position.y, yard.end.y):
+			_paint_path(ground, decor, Vector2i(x, y))
+	_place_tiles(decor, yard.position, FORGE)
+	forge_cell = yard.position + Vector2i(0, 1)
+	_place_tiles(decor, yard.position + Vector2i(3, 0), TROUGH)
+	_place_tiles(decor, yard.position + Vector2i(2, 3), ANVIL)
+	_set_tile(decor, yard.position + Vector2i(6, 1), BARREL_OPEN)
+	_set_tile(decor, yard.position + Vector2i(6, 3), BARREL_WATER)
 
 
 # --- Levels: plateaus, cliffs and ramps ----------------------------------------
@@ -947,7 +978,8 @@ func _setup_collision(tile_set: TileSet) -> void:
 func _building_defs() -> Array:
 	return [WELL, STATUE, BED, RUG,
 		{"origin": Vector2i(38, 1), "size": Vector2i(5, 2)}, # fence pieces and corners
-		{"origin": Vector2i(40, 3), "size": Vector2i(1, 1)}, TROUGH,
+		{"origin": Vector2i(40, 3), "size": Vector2i(1, 1)}, TROUGH, ANVIL, FORGE,
+		{"origin": Vector2i(38, 16), "size": Vector2i(4, 1)}, # barrels
 		{"origin": Vector2i(42, 33), "size": Vector2i(6, 2)}, # all shelves
 	]
 
@@ -1323,14 +1355,16 @@ func _add_chimney_smoke(roofs: TileMapLayer) -> void:
 		atlas.atlas = strip
 		atlas.region = Rect2(i * SMOKE_FRAME_WIDTH, 0, SMOKE_FRAME_WIDTH, strip.get_height())
 		frames.add_frame("default", atlas)
-	for house in houses:
-		if not house.has("chimney"):
-			continue
+	# [tile, where its opening is relative to the tile's center]
+	var chimneys: Array = houses.filter(func(h): return h.has("chimney")).map(func(h): return [h["chimney"], Vector2(1, 2)])
+	if forge_cell.x >= 0:
+		chimneys.append([forge_cell + Vector2i(1, -1), Vector2(-2, -4)]) # the forge's stone chimney
+	for chimney in chimneys:
 		var smoke := AnimatedSprite2D.new()
 		smoke.sprite_frames = frames
 		smoke.centered = false
-		# The opening is around (9, 10) inside the tile; the smoke starts at the bottom of its frame
-		var opening := roofs.map_to_local(house["chimney"]) + Vector2(1, 2)
+		# The smoke starts at the bottom of its frame, right at the opening
+		var opening: Vector2 = roofs.map_to_local(chimney[0]) + chimney[1]
 		smoke.position = to_local(roofs.to_global(opening)) - Vector2(SMOKE_FRAME_WIDTH / 2.0, strip.get_height())
 		smoke.modulate.a = 0.85
 		add_child(smoke) # last child: drawn above the roofs
@@ -1445,6 +1479,28 @@ func _spawn_merchant() -> void:
 		move_child(stall, player.get_index()) # drawn over the merchant's feet: he's behind it
 
 
+## The smithy's forge: flickering fire in the furnace (its smoke comes from _add_chimney_smoke).
+func _add_forge_fire() -> void:
+	if forge_cell.x < 0:
+		return
+	var strip: Texture2D = load(FORGE_FIRE)
+	var frames := SpriteFrames.new()
+	frames.set_animation_speed("default", 8.0)
+	for i in 4:
+		var atlas := AtlasTexture.new()
+		atlas.atlas = strip
+		atlas.region = Rect2(i * 8, 0, 8, strip.get_height())
+		frames.add_frame("default", atlas)
+	var fire := AnimatedSprite2D.new()
+	fire.sprite_frames = frames
+	fire.position = to_local(cell_to_world(forge_cell)) + Vector2(-1, -2) # in the furnace mouth
+	fire.play()
+	add_child(fire)
+	var decor := get_node_or_null("Decor")
+	if decor:
+		move_child(fire, decor.get_index() + 1)
+
+
 ## Moving water (shader on the Ground layer), sparkles on the water and ducks on the lake.
 func _add_water_effects() -> void:
 	var ground := get_node("Ground") as TileMapLayer
@@ -1483,6 +1539,10 @@ func _spawn_story_characters() -> void:
 		npc.set("npc_id", id)
 		npc.set("hair", info["hair"])
 		npc.set("display_name", info["name"])
+		npc.set("animation_folder", info.get("animation", "IDLE"))
+		npc.set("turn_to_player", info.get("turn_to_player", true))
+		npc.set("face_right", info.get("face_right", false))
+		npc.set("shop", info.get("shop", ""))
 		npc.position = to_local(cell_to_world(location_center(info["place"]) + info["offset"]))
 		add_child(npc)
 		if player:

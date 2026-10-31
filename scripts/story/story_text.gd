@@ -15,6 +15,9 @@ extends RefCounted
 ## Characters who walk the island. place = a location from map_generator, offset in tiles from its center.
 const NPCS := {
 	"mira": {"name": "Mira", "hair": "longhair", "place": "village", "offset": Vector2i(4, -2)},
+	# Gus works at the anvil in the smithy yard; E opens his shop
+	"gus": {"name": "Gus", "hair": "bowlhair", "place": "village", "offset": Vector2i(-15, 8),
+		"animation": "HAMMERING", "turn_to_player": false, "face_right": true, "shop": "res://scripts/smithy_shop.gd"},
 }
 
 const TALK := {

@@ -96,6 +96,9 @@ var seeds := {"carrot": 6} # crop name -> seeds owned
 var dead := false
 var tool := Tool.AXE
 var seed_index := 0 # which of Farm.CROP_TYPES the seeds slot plants
+## Tools you have. The sword has to be bought from Gus the blacksmith.
+var owned_tools: Array = [Tool.AXE, Tool.HOE, Tool.SEEDS, Tool.WATER, Tool.ROD]
+const TOOL_SOURCES := {Tool.SWORD: "buy one from Gus"} # where to get tools you don't have
 
 var _layers: Array[AnimatedSprite2D] = []
 var _facing := 1.0 # 1 = right, -1 = left
@@ -196,6 +199,8 @@ func _physics_process(delta: float) -> void:
 			_sleep(false)
 		elif world.has_node("Ranch") and world.get_node("Ranch").interact(self):
 			pass # fed the animals or milked a cow
+		elif not owned_tools.has(tool):
+			notify("No %s yet - %s" % [TOOL_NAMES[tool].to_lower(), TOOL_SOURCES.get(tool, "")])
 		elif tool == Tool.ROD:
 			_start_fishing()
 		elif tool != Tool.SWORD and farm and farm.is_ripe(_aim_point()):
@@ -481,6 +486,10 @@ func _npc_in_reach() -> Node2D:
 
 
 func _talk_to(npc: Node2D) -> void:
+	_face(npc.global_position.x - global_position.x)
+	if npc.shop != "":
+		_open_menu(npc.shop) # e.g. Gus's smithy
+		return
 	var key := Story.dialogue_for(npc.npc_id)
 	if key == "":
 		return
@@ -541,7 +550,7 @@ func get_state() -> Dictionary:
 		"position": [global_position.x, global_position.y],
 		"hp": hp, "coins": coins, "wood": wood,
 		"crops": crops.duplicate(), "seeds": seeds.duplicate(),
-		"tool": tool, "seed_index": seed_index,
+		"tool": tool, "seed_index": seed_index, "tools": owned_tools.duplicate(),
 	}
 
 
@@ -559,6 +568,8 @@ func set_state(data: Dictionary) -> void:
 		seeds[item] = int(data["seeds"][item])
 	seed_index = int(data["seed_index"])
 	tool = int(data["tool"]) as Tool
+	if data.has("tools"): # older saves had every tool
+		owned_tools = data["tools"].map(func(t): return int(t))
 	_camera.reset_smoothing()
 	refresh_ui()
 
@@ -925,6 +936,9 @@ func _update_hotbar() -> void:
 	var seed_icon := _hotbar_slots[Tool.SEEDS].get_node("Icon") as TextureRect
 	seed_icon.texture = Farm.crop_texture(seed_type, Farm.STAGES)
 	seed_icon.modulate.a = 1.0 if seed_count > 0 else 0.35 # faded when you have none
+	for t in Tool.size():
+		if t != Tool.SEEDS:
+			_hotbar_slots[t].get_node("Icon").modulate.a = 1.0 if owned_tools.has(t) else 0.25
 	if _hotbar_cursor.get_parent() != _hotbar_slots[tool]:
 		_hotbar_cursor.reparent(_hotbar_slots[tool], false)
 	if tool == Tool.SEEDS:
@@ -932,8 +946,18 @@ func _update_hotbar() -> void:
 			_tool_label.text = "%s seeds x%d  (press 3 to change)" % [seed_type.capitalize(), seed_count]
 		else:
 			_tool_label.text = "%s seeds x0 - buy some at the market  (press 3 to change)" % seed_type.capitalize()
+	elif not owned_tools.has(tool):
+		_tool_label.text = "%s - %s" % [TOOL_NAMES[tool], TOOL_SOURCES.get(tool, "not yours yet")]
 	else:
 		_tool_label.text = TOOL_NAMES[tool]
+
+
+## Gives you a tool (bought from a shop) and puts it in your hand.
+func give_tool(t: int) -> void:
+	if not owned_tools.has(t):
+		owned_tools.append(t)
+	_select_tool(t)
+	refresh_ui()
 
 
 func _update_hud() -> void:

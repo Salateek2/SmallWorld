@@ -10,6 +10,7 @@ extends CharacterBody2D
 ## Mouse wheel or +/- zooms the camera in and out.
 ## E at the market counter opens the shop; E next to your bed sleeps until morning.
 ## I or Tab opens the inventory. E next to a villager talks to them. Esc pauses.
+## Walk into water to swim (no tools while swimming).
 
 enum Hair { NONE, BOWL, CURLY, LONG, MOP, SHORT, SPIKEY }
 enum Tool { AXE, HOE, SEEDS, WATER, SWORD, ROD }
@@ -32,7 +33,6 @@ const SelectCursor := preload("res://scripts/select_cursor.gd")
 const HUMAN_DIR := "res://assets/Sunnyside_World_Assets/Characters/Human/"
 const FRAME_SIZE := Vector2i(96, 64)
 const FPS := 10.0
-const WOOD_PER_TREE := 3
 const INVINCIBLE_TIME := 1.0
 const ANIM_FPS := {
 	"attack": 16.0, "axe": 14.0, "dig": 20.0, "water": 8.0, "doing": 16.0,
@@ -51,6 +51,7 @@ const ANIMATIONS := {
 	"dig": "DIG",
 	"water": "WATERING",
 	"doing": "DOING",
+	"swim": "SWIMMING",
 	"cast": "CASTING",
 	"reel": "REELING",
 	"caught": "CAUGHT",
@@ -116,6 +117,9 @@ var _fade: ColorRect # black screen for sleeping
 var _message: Label # big centered text ("Day 2", "You passed out...")
 var _in_menu := false # shop open or sleeping: no moving or tools
 var _fishing := Fishing.NONE
+var _swimming := false # in the water (not on the dock)
+@export var swim_speed: float = 40.0
+const FISH_PER_CATCH := 3 # a catch drops this many fish next to you
 var _fish_timer := 0.0
 var _fish_caught := false
 var _above_head: Sprite2D # "!" when a fish bites, the fish when you catch it
@@ -178,10 +182,14 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 
+	var world := get_parent()
+	_swimming = world.has_method("is_water") and world.is_water(global_position + Vector2(0, 5))
+
 	if Input.is_action_just_pressed("use"):
 		var farm := _farm()
-		var world := get_parent()
-		if world.has_method("is_near_market") and world.is_near_market(global_position):
+		if _swimming:
+			notify("You can't use that while swimming")
+		elif world.has_method("is_near_market") and world.is_near_market(global_position):
 			_open_shop()
 		elif _npc_in_reach():
 			_talk_to(_npc_in_reach())
@@ -197,16 +205,19 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var direction := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	var running := Input.is_action_pressed("run")
-	velocity = direction * (run_speed if running else walk_speed)
+	var running := Input.is_action_pressed("run") and not _swimming
+	var speed := swim_speed if _swimming else (run_speed if running else walk_speed)
+	velocity = direction * speed
 	move_and_slide()
 
-	if direction == Vector2.ZERO:
+	if direction.x != 0.0:
+		_face(direction.x)
+	if _swimming:
+		_play("swim") # just your head above the water
+	elif direction == Vector2.ZERO:
 		_play("idle")
 	else:
 		_play("run" if running else "walk")
-		if direction.x != 0.0:
-			_face(direction.x)
 
 
 ## Called by goblins when their attack lands.
@@ -304,10 +315,7 @@ func _chop() -> void:
 	var target := global_position + Vector2(_facing * 12.0, 4.0)
 	var world := get_parent()
 	if world.has_method("try_chop"):
-		var result: int = world.try_chop(target)
-		if result == 2: # tree felled
-			wood += WOOD_PER_TREE
-			_update_hud()
+		world.try_chop(target) # a felled tree drops wood to pick up (see pickup.gd)
 
 
 func _harvest_or_plant() -> void:
@@ -382,9 +390,12 @@ func _reel_in(success: bool, message: String) -> void:
 func _finish_fishing() -> void:
 	_fishing = Fishing.NONE
 	if _fish_caught:
-		crops["fish"] = crops.get("fish", 0) + 1
-		_update_hud()
-		_show_toast("You caught a fish!")
+		# The fish flop out onto the ground behind you: walk over them to collect
+		var world := get_parent()
+		if world.has_method("drop_items"):
+			world.drop_items(global_position + Vector2(-_facing * 14.0, 0), "fish", load(FISH_ICON),
+				FISH_PER_CATCH, Vector2(8, 16))
+		_show_toast("You caught fish!")
 		_show_above_head(FISH_ICON)
 		await get_tree().create_timer(1.2).timeout
 		if _fishing == Fishing.NONE:
@@ -512,6 +523,15 @@ func _on_menu_closed() -> void:
 	# Wait a moment so the key that closed the menu doesn't open it again
 	await get_tree().create_timer(0.2).timeout
 	_in_menu = false
+
+
+## Called by pickups when you walk over them.
+func add_item(item: String, amount: int) -> void:
+	if item == "wood":
+		wood += amount
+	else:
+		crops[item] = crops.get(item, 0) + amount
+	refresh_ui()
 
 
 ## Everything about the player worth saving.

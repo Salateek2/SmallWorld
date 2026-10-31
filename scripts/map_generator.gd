@@ -5,7 +5,8 @@ extends Node2D
 ## The result is a normal tilemap, so you can fix anything by hand afterwards.
 ## Needs TileMapLayer children named Ground, Decor and (optional) Canopy.
 ## Canopy should be below Player in the Scene panel so tree tops draw over the player.
-## A "Roofs" layer is added automatically for house roofs; they fade out when you walk inside.
+## "Shore" and "ShoreSides" layers (water edges, the dock) and a "Roofs" layer (house roofs,
+## which fade out when you walk inside) are added automatically.
 ## The tile layers are locked in the editor so they can't be dragged out of place by accident.
 ##
 ## The world is split into locations (see LOCATIONS): your farm with your house,
@@ -39,7 +40,26 @@ const GRASS_VARIANTS: Array[Vector2i] = [
 const PATH_TILES: Array[Vector2i] = [
 	Vector2i(9, 7), Vector2i(10, 7), Vector2i(11, 7), Vector2i(9, 8), Vector2i(10, 8),
 ]
-const WATER_TILES: Array[Vector2i] = [Vector2i(31, 7), Vector2i(32, 7)]
+const WATER_TILES: Array[Vector2i] = [Vector2i(4, 1)] # plain water; details go on the Shore layer
+# Shore pieces drawn over the water's edge. Each side looks different, like in the pack's art:
+# the top edge has foam under a brown earth face (the land drops down to the water),
+# the left/right edges are a straight line, the bottom edge is a darker line.
+# Top/bottom go on the Shore layer, left/right on ShoreSides, so a corner gets both = square.
+const SHORE_N: Array[Vector2i] = [Vector2i(20, 2), Vector2i(23, 2)]
+const SHORE_S: Array[Vector2i] = [Vector2i(20, 4), Vector2i(23, 4)]
+const SHORE_W := Vector2i(22, 3)
+const SHORE_E := Vector2i(21, 3)
+const WATER_FLECKS: Array[Vector2i] = [Vector2i(20, 3), Vector2i(23, 3)] # ripples in open water
+const EARTH_FACE := Vector2i(11, 4) # the brown drop between grass and water on north shores
+# Wooden fence (horizontal run) and dock
+const FENCE_LEFT := Vector2i(38, 2)
+const FENCE_MIDDLE := Vector2i(39, 2)
+const FENCE_RIGHT := Vector2i(42, 2)
+const DOCK_PLANK := Vector2i(40, 5)
+const DOCK_END := Vector2i(40, 6)
+const DOCK_POST_LEFT := Vector2i(39, 5)
+const DOCK_POST_RIGHT := Vector2i(41, 5)
+const DOCK_LENGTH := 4 # planks out over the water
 
 # Single-tile decorations: small bushes, flowers, rocks, stumps, mushrooms
 const SMALL_DECOR: Array[Vector2i] = [
@@ -76,12 +96,17 @@ const POST_LEFT := Vector2i(15, 9) # + (0, row) ; left wall post
 const ROOF := Vector2i(16, 9) # + (0, row) ; row 0 top edge, 3 = shingles, 4 = eave
 const POST_RIGHT := Vector2i(17, 9)
 const ROOF_WINDOW := Vector2i(18, 10) # little X attic window in the roof
+const ROOF_CHIMNEY := Vector2i(28, 9) # roof tile with a chimney opening
+const CHIMNEY_SMOKE := "res://assets/Sunnyside_World_Assets/Elements/VFX/Chimney Smoke/chimneysmoke_01_strip30.png"
+const SMOKE_FRAME_WIDTH := 15
+## Village houses with a smoking chimney (your house always has one)
+const CHIMNEY_CHANCE := 0.6
 const WALL_WINDOW := Vector2i(16, 14) # front wall with a window
 const DOOR := Vector2i(16, 15)
 const FLOOR := Vector2i(10, 10) # wooden floor inside
 const BACK_WALL := Vector2i(10, 9)
 # Furniture: top-left tile and size
-const BED := {"origin": Vector2i(39, 33), "size": Vector2i(2, 2)}
+const BED := {"origin": Vector2i(40, 33), "size": Vector2i(2, 2)} # side view, headboard on the left
 const SHELVES: Array[Vector2i] = [ # 1x2 bookcases, cupboards, wardrobe, dresser
 	Vector2i(42, 33), Vector2i(43, 33), Vector2i(44, 33), Vector2i(45, 33), Vector2i(46, 33), Vector2i(47, 33),
 ]
@@ -89,7 +114,9 @@ const RUG := {"origin": Vector2i(43, 35), "size": Vector2i(3, 2)}
 const JARS: Array[Vector2i] = [Vector2i(46, 32), Vector2i(47, 32), Vector2i(48, 32), Vector2i(51, 32)]
 
 const WELL := {"origin": Vector2i(37, 19), "size": Vector2i(2, 2)}
-const MARKET_CRATES := {"origin": Vector2i(35, 9), "size": Vector2i(5, 2)} # three crate stacks
+# Market stall: open produce crates (Elements/Crops/crate_base.png) filled with crops
+const MARKET_CRATE := "res://assets/Sunnyside_World_Assets/Elements/Crops/crate_base.png"
+const MARKET_PRODUCE: Array[String] = ["pumpkin", "carrot", "cabbage"]
 const STATUE := {"origin": Vector2i(44, 18), "size": Vector2i(2, 4), "solid_rows": 2}
 
 ## Named places: center as a fraction of the map size, radius in tiles.
@@ -105,7 +132,8 @@ const FOREST_NAME := "Pinewood Forest"
 # Solid areas per tile, in tile pixels (x, y, width, height) from the tile's top-left.
 # Trees and bushes are only solid at the trunk/bottom, so you can walk behind them.
 const COLLISION_RECTS := {
-	Vector2i(31, 7): Rect2(0, 0, 16, 16), Vector2i(32, 7): Rect2(0, 0, 16, 16), # water
+	Vector2i(38, 2): Rect2(4, 8, 12, 5), Vector2i(39, 2): Rect2(0, 8, 16, 5), # fence
+	Vector2i(42, 2): Rect2(0, 8, 12, 5),
 	Vector2i(49, 2): Rect2(6, 0, 10, 7), Vector2i(50, 2): Rect2(0, 0, 10, 7), # round bush
 	Vector2i(49, 4): Rect2(6, 0, 10, 7), Vector2i(50, 4): Rect2(0, 0, 10, 7), # apple bush
 	Vector2i(49, 6): Rect2(6, 0, 10, 7), Vector2i(50, 6): Rect2(0, 0, 10, 7), # orange bush
@@ -126,7 +154,7 @@ const COLLISION_RECTS := {
 }
 # Furniture you bump into (bottom tile of beds and cupboards)
 const FURNITURE_RECTS := {
-	Vector2i(39, 34): Rect2(0, 0, 16, 12), Vector2i(40, 34): Rect2(0, 0, 16, 12),
+	Vector2i(40, 34): Rect2(0, 0, 16, 12), Vector2i(41, 34): Rect2(0, 0, 3, 12),
 	Vector2i(42, 34): Rect2(0, 0, 16, 10), Vector2i(43, 34): Rect2(0, 0, 16, 10),
 	Vector2i(44, 34): Rect2(0, 0, 16, 10), Vector2i(45, 34): Rect2(0, 0, 16, 10),
 	Vector2i(46, 34): Rect2(0, 0, 13, 10), Vector2i(47, 34): Rect2(0, 0, 16, 10),
@@ -136,6 +164,8 @@ enum ChopResult { NOTHING, HIT, FELLED }
 const CHOPPABLE := PINES
 const STUMP := Vector2i(31, 5)
 const HITS_TO_CHOP := 3
+const WOOD_DROPS := 3 # pieces of wood that pop out of a felled tree
+const WOOD_ICON := "res://assets/Sunnyside_World_Assets/Elements/Crops/wood.png"
 ## The creator's shake animation for the tall pine (4 frames, 28 px wide). Its pixels match
 ## the tileset pine exactly when drawn 2 px right and 1 px up from the tree's top-left.
 const PINE_SHAKE := "res://assets/Sunnyside_World_Assets/Elements/Plants/spr_deco_tree_02_strip4.png"
@@ -156,6 +186,8 @@ var _changes: Array = [] # trees felled and plants cut this game (saved, replaye
 @export_storage var houses: Array[Dictionary] = []
 ## Top-left tile of the market counter in the village
 @export_storage var market_cell := Vector2i(-1, -1)
+## The lake dock's tiles (you walk on it instead of swimming)
+@export_storage var dock_cells := Rect2i()
 
 var _rng := RandomNumberGenerator.new()
 var _blocked := {} # cells that already have a path, water or object
@@ -197,6 +229,8 @@ func generate() -> void:
 	else:
 		canopy = decor # no Canopy layer: tree tops go on Decor instead
 	var roofs := _get_or_create_roofs(ground)
+	var shore := _get_or_create_shore(ground, "Shore", 1)
+	var sides := _get_or_create_shore(ground, "ShoreSides", 2)
 	_fix_layers()
 
 	_source = ground.tile_set.get_source(SOURCE_ID) as TileSetAtlasSource
@@ -211,15 +245,19 @@ func generate() -> void:
 	_make_lake(ground)
 	var plaza := _make_village(layers)
 	_make_roads(ground, decor, plaza)
+	_connect_doors(ground, decor)
 	for i in pond_count:
 		_make_pond(ground)
+	_decorate_water(ground, shore, sides)
+	var dock := _make_dock(ground, shore, decor)
+	_make_lake_fence(ground, shore, decor, dock)
 	_scatter_objects(decor, canopy)
 	print("SmallWorld map generated (seed %d)" % _rng.seed)
 
 
 func clear() -> void:
 	_blocked.clear()
-	for layer_name in ["Ground", "Decor", "Canopy", "Roofs"]:
+	for layer_name in ["Ground", "Shore", "ShoreSides", "Decor", "Canopy", "Roofs"]:
 		var layer := get_node_or_null(layer_name) as TileMapLayer
 		if layer:
 			layer.clear()
@@ -280,6 +318,9 @@ func _paint_path(ground: TileMapLayer, decor: TileMapLayer, cell: Vector2i) -> v
 		return
 	if WATER_TILES.has(ground.get_cell_atlas_coords(cell)) or decor.get_cell_source_id(cell) != -1:
 		return # roads stop at water and go around buildings
+	for house in houses:
+		if house["rect"].has_point(cell):
+			return # never through a house (its floor isn't on Decor)
 	ground.set_cell(cell, SOURCE_ID, PATH_TILES[_rng.randi() % PATH_TILES.size()])
 	_blocked[cell] = true
 
@@ -287,13 +328,13 @@ func _paint_path(ground: TileMapLayer, decor: TileMapLayer, cell: Vector2i) -> v
 func _make_home(layers: Dictionary) -> void:
 	# Your blue house at the top of the farm clearing, door facing the field
 	var door := home_spawn_cell() + Vector2i(0, -2)
-	_build_house(layers, door - Vector2i(3, HOUSE_HEIGHT - 1), 5, HOUSE_COLOURS[0])
+	_build_house(layers, door - Vector2i(3, HOUSE_HEIGHT - 1), 5, HOUSE_COLOURS[0], true)
 
 
 ## Builds a house with its top-left corner at `cell`. inner = width of the room in tiles.
 ## Layers: floor/back wall on Ground, furniture and front wall on Decor (under the player),
 ## side posts on Canopy (over the player), roof on Roofs (over the player, fades when inside).
-func _build_house(layers: Dictionary, cell: Vector2i, inner: int, colour: int) -> void:
+func _build_house(layers: Dictionary, cell: Vector2i, inner: int, colour: int, chimney := false) -> void:
 	var ground: TileMapLayer = layers["ground"]
 	var decor: TileMapLayer = layers["decor"]
 	var canopy: TileMapLayer = layers["canopy"]
@@ -332,10 +373,16 @@ func _build_house(layers: Dictionary, cell: Vector2i, inner: int, colour: int) -
 	_place_tiles(decor, cell + Vector2i(door_x - 1, 3), RUG)
 	_set_tile(decor, cell + Vector2i(1, 4), _pick(JARS))
 
-	houses.append({
+	var house := {
 		"rect": Rect2i(cell, Vector2i(width, HOUSE_HEIGHT)),
 		"door": cell + Vector2i(door_x, HOUSE_HEIGHT - 1),
-	})
+	}
+	if chimney:
+		# Top shingle row, right side of the roof
+		var chimney_cell := cell + Vector2i(width - 2, 1)
+		_set_tile(roofs, chimney_cell, ROOF_CHIMNEY + shade)
+		house["chimney"] = chimney_cell
+	houses.append(house)
 
 
 func _set_tile(layer: TileMapLayer, cell: Vector2i, coords: Vector2i) -> void:
@@ -352,20 +399,25 @@ func _place_tiles(layer: TileMapLayer, cell: Vector2i, obj: Dictionary) -> void:
 
 
 func _make_lake(ground: TileMapLayer) -> void:
-	var center := location_center("lake")
-	var radius: Vector2 = LOCATIONS["lake"]["radius"] - Vector2(3, 2) # leave a grassy shore
-	var phase := _rng.randf() * TAU
-	for x in range(-int(radius.x) - 3, int(radius.x) + 4):
-		for y in range(-int(radius.y) - 3, int(radius.y) + 4):
-			# Wobble the radius with the angle so the shore isn't a perfect oval
-			var angle := atan2(float(y), float(x))
-			var wobble := 1.0 + 0.12 * sin(angle * 3.0 + phase) + 0.07 * sin(angle * 5.0 + phase * 2.0)
-			var d := Vector2(x, y) / (radius * wobble)
-			var cell := center + Vector2i(x, y)
-			if d.length_squared() <= 1.0 and cell.x >= BORDER and cell.x < map_width - BORDER \
-					and cell.y >= BORDER and cell.y < map_height - BORDER:
-				ground.set_cell(cell, SOURCE_ID, WATER_TILES[_rng.randi() % WATER_TILES.size()])
-				_blocked[cell] = true
+	# Blocky, like the ponds in the art pack: a wide middle and two lobes, all rectangles
+	var c := location_center("lake")
+	var r := Vector2i(LOCATIONS["lake"]["radius"]) - Vector2i(3, 2) # leave a grassy shore
+	var rects: Array[Rect2i] = [
+		Rect2i(c - Vector2i(r.x, r.y / 2), Vector2i(r.x * 2, r.y)),
+		Rect2i(c + Vector2i(_rng.randi_range(-r.x, -2), -r.y), Vector2i(_rng.randi_range(r.x / 2 + 2, r.x), r.y)),
+		Rect2i(c + Vector2i(_rng.randi_range(-r.x / 2, r.x / 4), 0), Vector2i(_rng.randi_range(r.x / 2, r.x), r.y)),
+	]
+	_fill_water(ground, rects)
+
+
+func _fill_water(ground: TileMapLayer, rects: Array[Rect2i]) -> void:
+	for rect in rects:
+		for x in range(rect.position.x, rect.end.x):
+			for y in range(rect.position.y, rect.end.y):
+				var cell := Vector2i(x, y)
+				if cell.x >= BORDER and cell.x < map_width - BORDER and cell.y >= BORDER and cell.y < map_height - BORDER:
+					ground.set_cell(cell, SOURCE_ID, WATER_TILES[0])
+					_blocked[cell] = true
 
 
 ## Builds the village around a dirt plaza. Returns the plaza's center tile.
@@ -382,9 +434,9 @@ func _make_village(layers: Dictionary) -> Vector2i:
 
 	_place_object(decor, canopy, c + Vector2i(-1, -3), STATUE) # statue in the middle
 	_place_object(decor, canopy, c + Vector2i(9, -1), WELL)
-	# Market: a counter of crates between the two south houses, merchant stands behind it
+	# Market between the two south houses: crates of produce, merchant behind them
+	# (the stall itself is made of sprites in _spawn_merchant)
 	market_cell = c + Vector2i(-2, 7)
-	_place_tiles(decor, market_cell, MARKET_CRATES)
 	for x in range(-1, 6):
 		for y in range(-2, 3):
 			_blocked[market_cell + Vector2i(x, y)] = true # keep the area around it clear
@@ -396,11 +448,7 @@ func _make_village(layers: Dictionary) -> Vector2i:
 		Vector2i(-11, -11), Vector2i(-3, -11), Vector2i(5, -11), Vector2i(-9, 6), Vector2i(3, 6),
 	]
 	for i in spots.size():
-		_build_house(layers, c + spots[i], 4, colours[(first + i) % colours.size()])
-		# A little path from the door down toward the plaza / road
-		var door: Vector2i = houses.back()["door"]
-		for n in range(1, 3):
-			_paint_path(ground, decor, door + Vector2i(0, n))
+		_build_house(layers, c + spots[i], 4, colours[(first + i) % colours.size()], _rng.randf() < CHIMNEY_CHANCE)
 	return c
 
 
@@ -413,6 +461,40 @@ func _make_roads(ground: TileMapLayer, decor: TileMapLayer, plaza: Vector2i) -> 
 	_carve_road(ground, decor, plaza + Vector2i(6, 1), lake - Vector2i(0, int(lake_radius.y) - 1)) # village -> lake
 	_carve_road(ground, decor, plaza + Vector2i(13, 1), north) # village -> forest
 	_carve_road(ground, decor, home + Vector2i(0, 2), location_center("meadow")) # farm -> meadow
+
+
+## A footpath from every front door to the nearest road or plaza below it:
+## straight down from the door, then sideways along that row. Doors face down,
+## so going down first never cuts through the house itself.
+func _connect_doors(ground: TileMapLayer, decor: TileMapLayer) -> void:
+	for house in houses:
+		var start: Vector2i = house["door"] + Vector2i(0, 1)
+		var target := _nearest_path_below(ground, start, 40)
+		if target.x < 0:
+			continue
+		var cell := start
+		while cell.y < target.y:
+			_paint_path(ground, decor, cell)
+			cell.y += 1
+		while cell.x != target.x:
+			_paint_path(ground, decor, cell)
+			cell.x += signi(target.x - cell.x)
+
+
+## Closest path tile at or below `from` (by walking distance), or (-1, -1).
+func _nearest_path_below(ground: TileMapLayer, from: Vector2i, radius: int) -> Vector2i:
+	var best := Vector2i(-1, -1)
+	var best_distance := INF
+	for x in range(from.x - radius, from.x + radius + 1):
+		for y in range(from.y, from.y + radius + 1):
+			var cell := Vector2i(x, y)
+			if not PATH_TILES.has(ground.get_cell_atlas_coords(cell)):
+				continue
+			var distance := absi(x - from.x) + absi(y - from.y)
+			if distance < best_distance:
+				best = cell
+				best_distance = distance
+	return best
 
 
 ## A 2-tile-wide road that wanders from a to b.
@@ -436,28 +518,110 @@ func _carve_road(ground: TileMapLayer, decor: TileMapLayer, a: Vector2i, b: Vect
 
 func _make_pond(ground: TileMapLayer) -> void:
 	for attempt in 40:
-		var rx := _rng.randi_range(2, 4)
-		var ry := _rng.randi_range(2, 3)
-		var center := Vector2i(
-			_rng.randi_range(rx + BORDER + 2, map_width - rx - BORDER - 3),
-			_rng.randi_range(ry + BORDER + 2, map_height - ry - BORDER - 3))
-		if location_at(center) != "":
-			continue # only in the open countryside
-		var cells: Array[Vector2i] = []
+		var size := Vector2i(_rng.randi_range(4, 7), _rng.randi_range(3, 5))
+		var corner := Vector2i(
+			_rng.randi_range(BORDER + 3, map_width - size.x - BORDER - 4),
+			_rng.randi_range(BORDER + 3, map_height - size.y - BORDER - 4))
+		var rects: Array[Rect2i] = [Rect2i(corner, size)]
+		if _rng.randf() < 0.6: # a second, offset rectangle for a less boxy shape
+			rects.append(Rect2i(corner + Vector2i(_rng.randi_range(-2, 2), _rng.randi_range(1, 3)),
+				Vector2i(_rng.randi_range(3, 5), _rng.randi_range(2, 3))))
 		var ok := true
-		for x in range(-rx, rx + 1):
-			for y in range(-ry, ry + 1):
-				var d := pow(float(x) / rx, 2) + pow(float(y) / ry, 2)
-				if d <= 1.0 + _rng.randf_range(-0.15, 0.15):
-					var cell := center + Vector2i(x, y)
-					if _near_blocked(cell, 2) or location_at(cell) != "":
-						ok = false
-					cells.append(cell)
+		for rect in rects:
+			for x in range(rect.position.x - 1, rect.end.x + 1):
+				for y in range(rect.position.y - 2, rect.end.y + 1):
+					var cell := Vector2i(x, y)
+					if _near_blocked(cell, 1) or location_at(cell) != "":
+						ok = false # only in the open countryside, away from roads and buildings
 		if ok:
-			for cell in cells:
-				ground.set_cell(cell, SOURCE_ID, WATER_TILES[_rng.randi() % WATER_TILES.size()])
-				_blocked[cell] = true
+			_fill_water(ground, rects)
 			return
+
+
+## Edges, earth faces and ripples for every lake and pond.
+func _decorate_water(ground: TileMapLayer, shore: TileMapLayer, sides: TileMapLayer) -> void:
+	var is_water := func(c: Vector2i) -> bool: return WATER_TILES.has(ground.get_cell_atlas_coords(c))
+	for y in map_height:
+		for x in map_width:
+			var cell := Vector2i(x, y)
+			if not is_water.call(cell):
+				# Land right above the water: the brown earth face of the drop
+				if is_water.call(cell + Vector2i(0, 1)):
+					_set_tile(shore, cell, EARTH_FACE)
+					_blocked[cell] = true
+				continue
+			var n: bool = is_water.call(cell + Vector2i(0, -1))
+			var s: bool = is_water.call(cell + Vector2i(0, 1))
+			if not n:
+				_set_tile(shore, cell, _pick(SHORE_N))
+			elif not s:
+				_set_tile(shore, cell, _pick(SHORE_S))
+			if not is_water.call(cell + Vector2i(-1, 0)):
+				_set_tile(sides, cell, SHORE_W)
+			elif not is_water.call(cell + Vector2i(1, 0)):
+				_set_tile(sides, cell, SHORE_E)
+			elif n and s and sin(x * 0.9) + sin(y * 1.3 + x * 0.4) > 0.9:
+				_set_tile(shore, cell, _pick(WATER_FLECKS)) # ripples in patches; the rest stays smooth
+
+
+## A wooden dock reaching into the lake where the road from the village arrives.
+## Returns the dock's column (or -1).
+func _make_dock(ground: TileMapLayer, shore: TileMapLayer, decor: TileMapLayer) -> int:
+	var x := location_center("lake").x
+	var top := -1
+	for y in range(location_center("lake").y - 20, location_center("lake").y):
+		if WATER_TILES.has(ground.get_cell_atlas_coords(Vector2i(x, y))):
+			top = y
+			break
+	if top < 0:
+		return -1
+	# Starts on the shore (over the earth face) and runs out over the water
+	for i in range(-1, DOCK_LENGTH):
+		var cell := Vector2i(x, top + i)
+		_set_tile(shore, cell, DOCK_END if i == DOCK_LENGTH - 1 else DOCK_PLANK)
+		_blocked[cell] = true
+		if i >= 0 and i % 2 == 0:
+			_set_tile(decor, cell + Vector2i(-1, 0), DOCK_POST_LEFT)
+			_set_tile(decor, cell + Vector2i(1, 0), DOCK_POST_RIGHT)
+	dock_cells = Rect2i(x, top - 1, 1, DOCK_LENGTH + 1)
+	return x
+
+
+## A fence along the lake's north shore (behind the earth face), open at the dock.
+func _make_lake_fence(ground: TileMapLayer, shore: TileMapLayer, decor: TileMapLayer, dock_x: int) -> void:
+	var fence_cells: Array[Vector2i] = []
+	for y in map_height:
+		for x in map_width:
+			var cell := Vector2i(x, y)
+			var below := cell + Vector2i(0, 1)
+			if location_at(below) != "lake" or shore.get_cell_atlas_coords(below) != EARTH_FACE:
+				continue
+			if absi(x - dock_x) <= 1 or PATH_TILES.has(ground.get_cell_atlas_coords(cell)):
+				continue # gap for the dock and the road
+			fence_cells.append(cell)
+	# Always a fence either side of the dock's entrance, along the top of the shore
+	if dock_x >= 0:
+		var y := dock_cells.position.y - 1
+		for side in [-1, 1]:
+			for i in range(2, 8):
+				var cell := Vector2i(dock_x + side * i, y)
+				if WATER_TILES.has(ground.get_cell_atlas_coords(cell)) or PATH_TILES.has(ground.get_cell_atlas_coords(cell)) 						or decor.get_cell_source_id(cell) != -1 or shore.get_cell_source_id(cell) != -1:
+					break
+				if not fence_cells.has(cell):
+					fence_cells.append(cell)
+	# Join neighbours into runs with an end post on each side (short bits look odd: skipped)
+	for cell in fence_cells:
+		if fence_cells.has(cell + Vector2i(-1, 0)):
+			continue # not the start of a run
+		var length := 1
+		while fence_cells.has(cell + Vector2i(length, 0)):
+			length += 1
+		if length < 4:
+			continue
+		for i in length:
+			var piece := FENCE_LEFT if i == 0 else (FENCE_RIGHT if i == length - 1 else FENCE_MIDDLE)
+			_set_tile(decor, cell + Vector2i(i, 0), piece)
+			_blocked[cell + Vector2i(i, 0)] = true
 
 
 func _setup_collision(tile_set: TileSet) -> void:
@@ -491,7 +655,8 @@ func _setup_collision(tile_set: TileSet) -> void:
 
 
 func _building_defs() -> Array:
-	return [WELL, STATUE, BED, RUG, MARKET_CRATES,
+	return [WELL, STATUE, BED, RUG,
+		{"origin": Vector2i(38, 2), "size": Vector2i(5, 1)}, # fence pieces
 		{"origin": Vector2i(42, 33), "size": Vector2i(6, 2)}, # all shelves
 	]
 
@@ -499,11 +664,25 @@ func _building_defs() -> Array:
 ## Keeps the tile layers exactly on top of each other and locks them in the editor,
 ## so clicking on the map can't drag or stretch one of them by accident.
 func _fix_layers() -> void:
-	for layer_name in ["Ground", "Decor", "Canopy", "Roofs"]:
+	for layer_name in ["Ground", "Shore", "ShoreSides", "Decor", "Canopy", "Roofs"]:
 		var layer := get_node_or_null(layer_name) as Node2D
 		if layer:
 			layer.transform = Transform2D.IDENTITY
 			layer.set_meta("_edit_lock_", true)
+
+
+## An overlay layer for water edges, `above` places it right over the ground (1, 2, ...).
+func _get_or_create_shore(ground: TileMapLayer, layer_name: String, above: int) -> TileMapLayer:
+	var shore := get_node_or_null(layer_name) as TileMapLayer
+	if shore == null:
+		shore = TileMapLayer.new()
+		shore.name = layer_name
+		shore.tile_set = ground.tile_set
+		shore.collision_enabled = false
+		add_child(shore)
+		shore.owner = self # saved with the scene
+	move_child(shore, ground.get_index() + above) # under everything else
+	return shore
 
 
 func _get_or_create_roofs(ground: TileMapLayer) -> TileMapLayer:
@@ -632,6 +811,9 @@ func try_chop(world_pos: Vector2) -> ChopResult:
 				_tree_hits.erase(tree_cell)
 				_fell_tree(tree_cell, i)
 				_changes.append({"felled": [tree_cell.x, tree_cell.y], "tree": i})
+				# Wood pops out around the stump; the player walks over it to collect
+				var stump := decor.to_global(decor.map_to_local(tree_cell + Vector2i(0, size.y - 1)))
+				drop_items(stump + Vector2(size.x * 4 - 4, 0), "wood", load(WOOD_ICON), WOOD_DROPS)
 				return ChopResult.FELLED
 	return ChopResult.NOTHING
 
@@ -711,6 +893,29 @@ func try_cut(world_pos: Vector2) -> bool:
 	return true
 
 
+## Throws `count` pickups out of `world_pos` in random directions, landing
+## between distance.x and distance.y pixels away.
+func drop_items(world_pos: Vector2, item: String, icon: Texture2D, count: int, distance := Vector2(22, 34)) -> void:
+	var player := get_node_or_null("Player")
+	for n in count:
+		var pickup := Node2D.new()
+		pickup.set_script(load("res://scripts/pickup.gd"))
+		pickup.item = item
+		pickup.texture = icon
+		add_child(pickup)
+		if player:
+			move_child(pickup, player.get_index()) # lies on the ground, under the player
+		# Land on dry ground (or the dock): try a few directions, else drop at your feet
+		var land := world_pos + Vector2(0, 6)
+		for attempt in 8:
+			var angle := TAU * (n + randf() * 0.6 + attempt * 0.37) / count
+			var spot := world_pos + Vector2(cos(angle), sin(angle) * 0.6) * randf_range(distance.x, distance.y) + Vector2(0, 8)
+			if not is_water(spot):
+				land = spot
+				break
+		pickup.launch(world_pos, land)
+
+
 ## Removes a tree (all its tiles) and leaves a stump.
 func _fell_tree(tree_cell: Vector2i, index: int) -> void:
 	var decor := get_node("Decor") as TileMapLayer
@@ -756,6 +961,9 @@ func is_farmable(cell: Vector2i) -> bool:
 		return false
 	if canopy and canopy.get_cell_source_id(cell) != -1:
 		return false
+	var shore := get_node_or_null("Shore") as TileMapLayer
+	if shore and shore.get_cell_source_id(cell) != -1:
+		return false # earth faces at the water, the dock
 	return true
 
 
@@ -767,8 +975,8 @@ func location_name_at(world_pos: Vector2) -> String:
 	return location_name(location_at(ground.local_to_map(ground.to_local(world_pos))))
 
 
-## At game start: gives every house its own roof layer (so only that roof fades)
-## and invisible walls with a gap at the door.
+## At game start: gives every house its own roof layer (so only that roof fades),
+## invisible walls with a gap at the door, and chimney smoke.
 func _setup_houses() -> void:
 	var shared := get_node_or_null("Roofs") as TileMapLayer
 	if shared == null:
@@ -811,6 +1019,32 @@ func _setup_houses() -> void:
 			collision.shape = shape
 			collision.position = r.get_center()
 			walls.add_child(collision)
+	_add_chimney_smoke(shared)
+
+
+## Animated smoke rising from every house that has a chimney.
+func _add_chimney_smoke(roofs: TileMapLayer) -> void:
+	var strip: Texture2D = load(CHIMNEY_SMOKE)
+	var frames := SpriteFrames.new()
+	frames.set_animation_speed("default", 10.0)
+	for i in strip.get_width() / SMOKE_FRAME_WIDTH:
+		var atlas := AtlasTexture.new()
+		atlas.atlas = strip
+		atlas.region = Rect2(i * SMOKE_FRAME_WIDTH, 0, SMOKE_FRAME_WIDTH, strip.get_height())
+		frames.add_frame("default", atlas)
+	for house in houses:
+		if not house.has("chimney"):
+			continue
+		var smoke := AnimatedSprite2D.new()
+		smoke.sprite_frames = frames
+		smoke.centered = false
+		# The opening is around (9, 10) inside the tile; the smoke starts at the bottom of its frame
+		var opening := roofs.map_to_local(house["chimney"]) + Vector2(1, 2)
+		smoke.position = to_local(roofs.to_global(opening)) - Vector2(SMOKE_FRAME_WIDTH / 2.0, strip.get_height())
+		smoke.modulate.a = 0.85
+		add_child(smoke) # last child: drawn above the roofs
+		smoke.play()
+		smoke.frame = randi() % frames.get_frame_count("default") # chimneys don't puff in sync
 
 
 func _process(delta: float) -> void:
@@ -835,10 +1069,12 @@ func cell_to_world(cell: Vector2i) -> Vector2:
 	return ground.to_global(ground.map_to_local(cell))
 
 
-## True if there's water (lake or pond) at world_pos. Used for fishing.
+## True if there's water (lake or pond) at world_pos, not counting the dock.
+## Used for fishing and swimming.
 func is_water(world_pos: Vector2) -> bool:
 	var ground := get_node("Ground") as TileMapLayer
-	return WATER_TILES.has(ground.get_cell_atlas_coords(ground.local_to_map(ground.to_local(world_pos))))
+	var cell := ground.local_to_map(ground.to_local(world_pos))
+	return WATER_TILES.has(ground.get_cell_atlas_coords(cell)) and not dock_cells.has_point(cell)
 
 
 ## True if world_pos is next to the bed in your home (where you can sleep).
@@ -884,11 +1120,35 @@ func _spawn_merchant() -> void:
 	merchant.name = "Merchant"
 	merchant.set("hair", "curlyhair")
 	merchant.set("display_name", "Merchant")
-	merchant.position = to_local(cell_to_world(market_cell + Vector2i(2, -1)) + Vector2(0, -2))
+	merchant.position = to_local(cell_to_world(market_cell + Vector2i(2, -1)) + Vector2(0, 2))
 	add_child(merchant)
+
+	# The stall: three crates of produce in a row in front of the merchant
+	var stall := StaticBody2D.new()
+	stall.name = "MarketStall"
+	stall.position = to_local(cell_to_world(market_cell + Vector2i(2, 0)))
+	var crate_texture: Texture2D = load(MARKET_CRATE)
+	for i in MARKET_PRODUCE.size():
+		var crate := Sprite2D.new()
+		crate.texture = crate_texture
+		crate.position = Vector2((i - 1) * 16, 0)
+		stall.add_child(crate)
+		var produce := Sprite2D.new()
+		produce.texture = load("res://assets/Sunnyside_World_Assets/Elements/Crops/%s_05.png" % MARKET_PRODUCE[i])
+		produce.position = Vector2((i - 1) * 16, -5) # sitting in the open top of the crate
+		stall.add_child(produce)
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(48, 10)
+	var collision := CollisionShape2D.new()
+	collision.shape = shape
+	collision.position = Vector2(0, 2)
+	stall.add_child(collision)
+	add_child(stall)
+
 	var player := get_node_or_null("Player")
 	if player:
 		move_child(merchant, player.get_index())
+		move_child(stall, player.get_index()) # drawn over the merchant's feet: he's behind it
 
 
 ## Characters from story_text.gd, standing in their locations.

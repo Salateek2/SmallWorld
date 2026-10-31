@@ -121,7 +121,7 @@ func _collect(tab: int) -> Array[Dictionary]:
 						"text": "Sells for %dc at the market." % Farm.CROP_DATA[crop]["sell"]})
 			if player.crops.get("fish", 0) > 0:
 				list.append({"name": "Fish", "kind": "Catch", "count": player.crops["fish"],
-					"icon": load(CROPS + "fish.png"), "text": "Fresh from the water. Sells for 35c."})
+					"icon": load(CROPS + "fish.png"), "text": "Fresh from the water. Sells for 15c."})
 			if player.wood > 0:
 				list.append({"name": "Wood", "kind": "Material", "count": player.wood,
 					"icon": load(CROPS + "wood.png"), "text": "From chopping pine trees. Good for building."})

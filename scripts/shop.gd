@@ -8,7 +8,7 @@ signal closed
 const Farm := preload("res://scripts/farm.gd")
 ## Things you can sell that aren't crops
 const EXTRA_ITEMS := {
-	"fish": {"sell": 35, "icon": "res://assets/Sunnyside_World_Assets/Elements/Crops/fish.png"},
+	"fish": {"sell": 15, "icon": "res://assets/Sunnyside_World_Assets/Elements/Crops/fish.png"},
 }
 
 var player: Node ## the player opening the shop (has coins, crops, seeds)

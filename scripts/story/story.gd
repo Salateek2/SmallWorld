@@ -12,6 +12,23 @@ var quests := {} ## quest id -> "active" or "done"
 var player: Node ## set by the player; quests count and take items from them
 
 
+## Forget everything (New Game).
+func reset() -> void:
+	flags.clear()
+	quests.clear()
+	changed.emit()
+
+
+func get_state() -> Dictionary:
+	return {"flags": flags.duplicate(), "quests": quests.duplicate()}
+
+
+func set_state(data: Dictionary) -> void:
+	flags = data.get("flags", {})
+	quests = data.get("quests", {})
+	changed.emit()
+
+
 ## Which dialogue a character uses right now (first TALK rule whose condition holds).
 func dialogue_for(npc_id: String) -> String:
 	for rule in Text.TALK.get(npc_id, []):

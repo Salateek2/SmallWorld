@@ -151,6 +151,34 @@ func is_ripe(world_pos: Vector2) -> bool:
 	return _plots.has(cell) and _plots[cell].crop != null and _plots[cell].stage >= RIPE
 
 
+## Every plot as plain data, for the save file.
+func get_state() -> Array:
+	var list := []
+	for cell in _plots:
+		var plot: Dictionary = _plots[cell]
+		list.append({"cell": [cell.x, cell.y], "type": plot.type, "stage": plot.stage,
+			"wet": plot.wet, "grown": plot.grown})
+	return list
+
+
+## Rebuilds the farm from saved data.
+func set_state(list: Array) -> void:
+	for data in list:
+		var cell := Vector2i(data["cell"][0], data["cell"][1])
+		var soil := Sprite2D.new()
+		soil.position = _ground.map_to_local(cell)
+		add_child(soil)
+		var plot := {"soil": soil, "crop": null, "type": data["type"], "stage": int(data["stage"]),
+			"wet": false, "grown": int(data["grown"])}
+		_plots[cell] = plot
+		_set_wet(plot, data["wet"])
+		if plot.type != "":
+			plot.crop = Sprite2D.new()
+			plot.crop.centered = false
+			add_child(plot.crop)
+			_update_crop_sprite(cell)
+
+
 ## Icon of a crop: the seed (stage 0) or the harvested item (stage 5).
 static func crop_texture(crop_type: String, stage: int) -> Texture2D:
 	return load(CROPS_DIR + "%s_%02d.png" % [crop_type, stage])

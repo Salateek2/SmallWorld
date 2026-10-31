@@ -149,6 +149,7 @@ const CUTTABLE: Array[Vector2i] = [
 ]
 
 var _tree_hits := {} # tree cell -> hits so far
+var _changes: Array = [] # trees felled and plants cut this game (saved, replayed on load)
 
 ## Houses on the map: footprint rect and door cell (saved with the scene by Generate Map).
 ## The first one is your home.
@@ -174,6 +175,8 @@ func _ready() -> void:
 	_setup_world_bounds()
 	_place_player()
 	_spawn_goblins()
+	if SaveGame.load_requested:
+		SaveGame.apply(self) # "Continue" on the title screen
 
 
 func generate() -> void:
@@ -627,12 +630,8 @@ func try_chop(world_pos: Vector2) -> ChopResult:
 					_shake_tree(decor, canopy, tree_cell, i)
 					return ChopResult.HIT
 				_tree_hits.erase(tree_cell)
-				for ox in size.x:
-					for oy in size.y:
-						var c := tree_cell + Vector2i(ox, oy)
-						decor.erase_cell(c)
-						canopy.erase_cell(c)
-				decor.set_cell(tree_cell + Vector2i(0, size.y - 1), SOURCE_ID, STUMP)
+				_fell_tree(tree_cell, i)
+				_changes.append({"felled": [tree_cell.x, tree_cell.y], "tree": i})
 				return ChopResult.FELLED
 	return ChopResult.NOTHING
 
@@ -708,7 +707,39 @@ func try_cut(world_pos: Vector2) -> bool:
 	if not CUTTABLE.has(decor.get_cell_atlas_coords(cell)):
 		return false
 	decor.erase_cell(cell)
+	_changes.append({"cut": [cell.x, cell.y]})
 	return true
+
+
+## Removes a tree (all its tiles) and leaves a stump.
+func _fell_tree(tree_cell: Vector2i, index: int) -> void:
+	var decor := get_node("Decor") as TileMapLayer
+	var canopy := get_node_or_null("Canopy") as TileMapLayer
+	if canopy == null:
+		canopy = decor
+	var size: Vector2i = BIG_OBJECTS[index]["size"]
+	for ox in size.x:
+		for oy in size.y:
+			var c := tree_cell + Vector2i(ox, oy)
+			decor.erase_cell(c)
+			canopy.erase_cell(c)
+	decor.set_cell(tree_cell + Vector2i(0, size.y - 1), SOURCE_ID, STUMP)
+
+
+## What changed on the map this game, for the save file.
+func get_changes() -> Array:
+	return _changes.duplicate(true)
+
+
+## Replays saved changes: fells the same trees and cuts the same plants again.
+func apply_changes(changes: Array) -> void:
+	var decor := get_node("Decor") as TileMapLayer
+	for change in changes:
+		if change.has("felled"):
+			_fell_tree(Vector2i(change["felled"][0], change["felled"][1]), int(change["tree"]))
+		elif change.has("cut"):
+			decor.erase_cell(Vector2i(change["cut"][0], change["cut"][1]))
+	_changes = changes.duplicate(true)
 
 
 ## True if the hoe can turn this tile into soil: plain grass with nothing on it.

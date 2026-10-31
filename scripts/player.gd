@@ -9,7 +9,7 @@ extends CharacterBody2D
 ## Tools always work on the tile in front of the character (left or right, the way it faces).
 ## Mouse wheel or +/- zooms the camera in and out.
 ## E at the market counter opens the shop; E next to your bed sleeps until morning.
-## I or Tab opens the inventory. E next to a villager talks to them.
+## I or Tab opens the inventory. E next to a villager talks to them. Esc pauses.
 
 enum Hair { NONE, BOWL, CURLY, LONG, MOP, SHORT, SPIKEY }
 enum Tool { AXE, HOE, SEEDS, WATER, SWORD, ROD }
@@ -160,6 +160,9 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("inventory") and not _busy and _fishing == Fishing.NONE:
 		_open_menu("res://scripts/inventory.gd")
+		return
+	if Input.is_action_just_pressed("ui_cancel") and not _busy and _fishing == Fishing.NONE:
+		_open_menu("res://scripts/pause_menu.gd")
 		return
 
 	_handle_tool_keys()
@@ -445,6 +448,8 @@ func _sleep(passed_out: bool) -> void:
 	tween.parallel().tween_property(_message, "modulate:a", 0.0, 1.0)
 	await tween.finished
 	_in_menu = false
+	if SaveGame.save_game(): # autosave every morning
+		notify("Game saved")
 
 
 func _open_shop() -> void:
@@ -507,6 +512,34 @@ func _on_menu_closed() -> void:
 	# Wait a moment so the key that closed the menu doesn't open it again
 	await get_tree().create_timer(0.2).timeout
 	_in_menu = false
+
+
+## Everything about the player worth saving.
+func get_state() -> Dictionary:
+	return {
+		"position": [global_position.x, global_position.y],
+		"hp": hp, "coins": coins, "wood": wood,
+		"crops": crops.duplicate(), "seeds": seeds.duplicate(),
+		"tool": tool, "seed_index": seed_index,
+	}
+
+
+## Restores a saved player. (JSON turns whole numbers into decimals, hence the int().)
+func set_state(data: Dictionary) -> void:
+	global_position = Vector2(data["position"][0], data["position"][1])
+	hp = int(data["hp"])
+	coins = int(data["coins"])
+	wood = int(data["wood"])
+	crops = {}
+	for item in data["crops"]:
+		crops[item] = int(data["crops"][item])
+	seeds = {}
+	for item in data["seeds"]:
+		seeds[item] = int(data["seeds"][item])
+	seed_index = int(data["seed_index"])
+	tool = int(data["tool"]) as Tool
+	_camera.reset_smoothing()
+	refresh_ui()
 
 
 ## Updates the HUD and hotbar after coins, crops or seeds change (used by the shop).

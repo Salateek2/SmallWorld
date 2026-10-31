@@ -11,13 +11,14 @@ config_version=5
 [application]
 
 config/name="SmallWorld"
-run/main_scene="uid://cf16m4jolpjqn"
+run/main_scene="res://title.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 
 [autoload]
 
 Story="*res://scripts/story/story.gd"
+SaveGame="*res://scripts/save_game.gd"
 
 [display]
 

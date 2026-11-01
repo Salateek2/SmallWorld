@@ -30,11 +30,52 @@ func set_state(data: Dictionary) -> void:
 
 
 ## Which dialogue a character uses right now (first TALK rule whose condition holds).
+## With no rule to follow, villagers make small talk that suits the time of day.
 func dialogue_for(npc_id: String) -> String:
 	for rule in Text.TALK.get(npc_id, []):
 		if not rule.has("if") or check(rule["if"]):
 			return rule["say"]
+	if Text.SMALL_TALK.has(npc_id):
+		return "small:%s:%s" % [npc_id, _time_of_day()]
 	return ""
+
+
+## The lines of a dialogue: [[speaker, text], ...]. Small talk is one line, a different
+## one each time you chat (and each day).
+func lines_for(dialogue_key: String) -> Array:
+	if not dialogue_key.begins_with("small:"):
+		return Text.DIALOGUE.get(dialogue_key, {}).get("lines", [])
+	var parts := dialogue_key.split(":")
+	var choices: Array = Text.SMALL_TALK[parts[1]].get(parts[2], [])
+	if choices.is_empty():
+		return []
+	var clock := _clock()
+	var count: int = _chats.get(parts[1], 0)
+	_chats[parts[1]] = count + 1
+	var day: int = clock.day if clock else 0
+	return [[Text.NPCS[parts[1]]["name"], choices[(count + day) % choices.size()]]]
+
+
+var _chats := {} # npc -> how many times you've chatted (picks the next line)
+
+
+func _clock() -> Node:
+	if player == null or player.get_parent() == null:
+		return null
+	return player.get_parent().get_node_or_null("DayNight")
+
+
+## "morning", "day", "evening" or "night", from the game clock.
+func _time_of_day() -> String:
+	var clock := _clock()
+	var hour: float = clock.minutes / 60.0 if clock else 12.0
+	if hour < 11.0:
+		return "morning"
+	if hour < 17.0:
+		return "day"
+	if hour < 22.0:
+		return "evening"
+	return "night"
 
 
 ## True if talking to this character would start or finish a quest (shows a "!").

@@ -25,7 +25,7 @@ var _next_arrow: TextureRect
 
 func _ready() -> void:
 	layer = 10
-	_lines = Text.DIALOGUE.get(dialogue_key, {}).get("lines", [])
+	_lines = Story.lines_for(dialogue_key)
 
 	# Box along the bottom of the screen, above the hotbar
 	var box := VBoxContainer.new()

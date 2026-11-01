@@ -81,32 +81,46 @@ const HALL_DOOR_X := 10
 const HALL_MARGIN := 600.0 # black space around the hall that the camera may show
 # [sheet column, sheet row, tile in the hall (top-left of the 2 x 2 prop), solid width (0 = walk through)]
 const HALL_LAYOUT := [
-	# along the back wall
+	# along the back wall (rows 0-1: drawn behind everyone, Mira included)
 	[0, 7, Vector2(2, 1), 26], # fireplace
-	[1, 7, Vector2(3.5, 0), 0], # torch
-	[1, 3, Vector2(5, 1), 26], # barrel with a tap
-	[3, 6, Vector2(8, 1), 26], # bottle shelves
-	[4, 6, Vector2(10, 1), 26],
-	[6, 3, Vector2(12, 1), 26], # another barrel
-	[3, 7, Vector2(14, 0), 0], # antlers on the wall
+	[1, 7, Vector2(4.25, 0), 0], # torch
+	[3, 6, Vector2(6.25, 1), 0], # bottle shelves behind the bar
+	[4, 6, Vector2(8, 1), 0],
+	[1, 3, Vector2(12, 1), 26], # barrel with a tap
+	[6, 3, Vector2(14, 1), 26], # another barrel
 	[7, 7, Vector2(16, 0.5), 30], # stairs (the rooms upstairs come later)
-	# the bar, with Mira behind it
-	[1, 1, Vector2(6, 3), 32],
-	[2, 1, Vector2(8, 3), 32], # the beer tap
-	[1, 1, Vector2(10, 3), 32],
-	[1, 1, Vector2(12, 3), 32],
 	# tables (the door aisle in the middle stays clear)
 	[0, 5, Vector2(2, 6.5), 26],
-	[3, 5, Vector2(2, 10), 26],
+	[2, 5, Vector2(2.75, 9.4), 26], # in front of the corner sofa
 	[4, 5, Vector2(6, 9), 26],
 	[5, 5, Vector2(12, 9), 26],
 	[6, 5, Vector2(15, 6.5), 26],
 	[1, 5, Vector2(15, 10), 26],
 	[7, 3, Vector2(17, 11), 26], # stacked barrels in the corner
 ]
+# Furniture Michal drew in Piskel (tidied up by tools/clean_bar.py and clean_sofa.py).
+# Position in hall pixels; walls = what you bump into, also in hall pixels;
+# under = drawn below people (they sit on it) instead of in front of them.
+const HALL_PIECES := [
+	{ # the corner bar, Mira inside its L
+		"texture": "res://assets/tavern/bar_corner.png",
+		"position": Vector2(88, 17),
+		"walls": [
+			Rect2(100, 75, 78, 14), # the long front
+			Rect2(161, 18, 20, 57), # the arm back to the wall
+			Rect2(88, 28, 12, 61), # the gap at its left end (a little gate)
+		],
+	},
+	{ # the corner sofa in the bottom-left corner (the hall's walls hold it in)
+		"texture": "res://assets/tavern/sofa_corner.png",
+		"position": Vector2(16, 127),
+		"walls": [],
+		"under": true,
+	},
+]
 const HALL_STOOLS := [ # 1 tile each, never solid
-	Vector2(9, 6), Vector2(12, 6), Vector2(13, 6), # at the bar
-	Vector2(1, 7), Vector2(4, 7), Vector2(1, 10.5), Vector2(4, 10.5),
+	Vector2(7, 6), Vector2(9, 6), Vector2(11, 6), # at the bar
+	Vector2(1, 7), Vector2(4, 7),
 	Vector2(5, 9.5), Vector2(8, 9.5), Vector2(11, 9.5), Vector2(14, 9.5),
 	Vector2(14, 7), Vector2(17, 7), Vector2(14, 10.5),
 ]
@@ -297,6 +311,9 @@ var _source: TileSetAtlasSource
 var _roofs: Array[TileMapLayer] = [] # one per house at runtime, faded when you're inside
 var _in_hall := false # player is inside the tavern hall (camera kept there)
 var _fading := false # walking through a door
+var _house_owners := {} # house index -> owner's name (from NPCS "home")
+var _grid: AStarGrid2D # where villagers can walk: roads, plaza, doorways
+var _hall_grid: AStarGrid2D # the same inside the tavern hall
 
 
 func _ready() -> void:
@@ -1353,6 +1370,13 @@ func location_name_at(world_pos: Vector2) -> String:
 	var cell := ground.local_to_map(ground.to_local(world_pos))
 	if hall_rect().has_point(cell):
 		return "The Tavern"
+	for i in houses.size():
+		var rect: Rect2i = houses[i]["rect"]
+		if Rect2i(rect.position + Vector2i(1, 1), rect.size - Vector2i(2, 1)).has_point(cell):
+			if i == 0:
+				return "Home"
+			if _house_owners.has(i):
+				return "%s's House" % _house_owners[i]
 	return location_name(location_at(cell))
 
 
@@ -1609,14 +1633,24 @@ func _build_tavern() -> void:
 		Rect2(corner.x, front, door_left - corner.x, 12), # front, left of the door
 		Rect2(door_left + 16, front, corner.x + size.x - door_left - 16, 12), # right of the door
 	]
+	var under := Node2D.new() # the floor's things: drawn under the people
+	under.name = "TavernUnder"
+	add_child(under)
+	move_child(under, tiles.get_index() + 1)
 	for item in HALL_LAYOUT:
 		var sprite := Sprite2D.new()
 		sprite.texture = prop.call(item[0], item[1])
 		sprite.centered = false
 		sprite.position = to_local(corner + item[2] * 16)
-		hall.add_child(sprite)
-		if item[3] > 0: # bump into its lower part
-			walls.append(Rect2(corner + item[2] * 16 + Vector2(16 - item[3] / 2.0, 18), Vector2(item[3], 12)))
+		(under if item[2].y <= 1 else hall).add_child(sprite)
+	for piece in HALL_PIECES:
+		var sprite := Sprite2D.new()
+		sprite.texture = load(piece["texture"])
+		sprite.centered = false
+		sprite.position = to_local(corner + piece["position"])
+		(under if piece.get("under", false) else hall).add_child(sprite) # the bar: in front of Mira
+	for r in _hall_solid_rects():
+		walls.append(Rect2(corner + r.position, r.size))
 	for r in walls:
 		var shape := RectangleShape2D.new()
 		shape.size = r.size
@@ -1629,7 +1663,7 @@ func _build_tavern() -> void:
 		stool.texture = prop.call(7, 4)
 		stool.scale = Vector2.ONE * 0.75 # the sheet's stools are a bit tall next to people
 		stool.position = to_local(corner + cell * 16 + Vector2(8, 4))
-		hall.add_child(stool)
+		under.add_child(stool) # villagers sit in front of them
 	add_child(hall)
 	if player:
 		move_child(hall, player.get_index()) # under the player, over Mira (she's behind the bar)
@@ -1653,6 +1687,18 @@ func _build_tavern() -> void:
 			_roofs[i].add_child(sign)
 	if sign.get_parent() == null:
 		add_child(sign)
+
+
+## What you bump into in the hall, in hall pixels: the lower part of the solid props, and the bar.
+func _hall_solid_rects() -> Array[Rect2]:
+	var rects: Array[Rect2] = []
+	for item in HALL_LAYOUT:
+		if item[3] > 0:
+			rects.append(Rect2(item[2] * 16 + Vector2(16 - item[3] / 2.0, 18), Vector2(item[3], 12)))
+	for piece in HALL_PIECES:
+		for r in piece["walls"]:
+			rects.append(r)
+	return rects
 
 
 ## Doors that lead somewhere else: stepping into the tavern's door takes you into the hall,
@@ -1688,6 +1734,137 @@ func _go_through_door(player: Node2D, to_cell: Vector2i) -> void:
 		player.set_physics_process(true)
 		layer.queue_free()
 		_fading = false)
+
+
+# --- Villagers walking around --------------------------------------------------
+
+## A villager's day: the schedule from story_text.gd and the cell of each stop.
+func _make_routine(info: Dictionary) -> Dictionary:
+	_build_walk_grids()
+	var stops := {"home": {"cell": houses[info["home"]]["door"] + info.get("home_spot", Vector2i(0, -1))}}
+	if info.has("work"):
+		var work: Dictionary = info["work"]
+		stops["work"] = {
+			"cell": _nearest_free(_grid, _spot_cell(work["spot"]) + work.get("offset", Vector2i.ZERO)),
+			"anim": work.get("anim", "IDLE"),
+			"wander": work.get("wander", 0),
+		}
+	if info.has("seat"):
+		stops["tavern"] = {"cell": hall_rect().position + info["seat"]}
+	return {"schedule": info["routine"], "stops": stops}
+
+
+## Named places villagers work at.
+func _spot_cell(spot: String) -> Vector2i:
+	var village := location_center("village")
+	match spot:
+		"lake_road": # where the road from the village reaches the lake
+			return location_center("lake") - Vector2i(0, int(LOCATIONS["lake"]["radius"].y) - 1)
+		"forest_road": # the end of the road north into the pines
+			return Vector2i(village.x + 24, int(_forest_edge(village.x + 24)) + 1)
+		"market":
+			return market_cell
+		"plaza":
+			return village
+	return location_center(spot)
+
+
+## Walking grids: villagers stay on roads, the plaza and inside doorways; in the hall,
+## anywhere on the floor that isn't furniture.
+func _build_walk_grids() -> void:
+	if _grid:
+		return
+	var ground := get_node("Ground") as TileMapLayer
+	var decor := get_node("Decor") as TileMapLayer
+	var doors := {}
+	for house in houses:
+		doors[house["door"]] = true
+	_grid = AStarGrid2D.new()
+	_grid.region = Rect2i(0, 0, map_width, map_height)
+	_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+	_grid.update()
+	for x in map_width:
+		for y in map_height:
+			var cell := Vector2i(x, y)
+			_grid.set_point_solid(cell, not _villager_can_walk(ground, decor, cell, doors))
+
+	var hall := hall_rect()
+	_hall_grid = AStarGrid2D.new()
+	_hall_grid.region = hall
+	_hall_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+	_hall_grid.update()
+	_hall_grid.fill_solid_region(hall)
+	_hall_grid.fill_solid_region(Rect2i(hall.position + Vector2i(1, 2), hall.size - Vector2i(2, 3)), false)
+	_hall_grid.set_point_solid(_hall_door(), false)
+	for r in _hall_solid_rects(): # the same footprints the furniture's collision has
+		var first := Vector2i(r.position / 16)
+		var last := Vector2i((r.end - Vector2.ONE) / 16)
+		_hall_grid.fill_solid_region(Rect2i(hall.position + first, last - first + Vector2i.ONE))
+
+
+func _villager_can_walk(ground: TileMapLayer, decor: TileMapLayer, cell: Vector2i, doors: Dictionary) -> bool:
+	if ground.get_cell_source_id(cell) != SOURCE_ID:
+		return false
+	var tile := ground.get_cell_atlas_coords(cell)
+	if not (PATH_TILES.has(tile) or tile == FLOOR):
+		return false
+	if doors.has(cell) or decor.get_cell_source_id(cell) == -1:
+		return true
+	var thing := decor.get_cell_atlas_coords(cell) # rugs are fine to walk on
+	return Rect2i(RUG["origin"], RUG["size"]).has_point(thing)
+
+
+## World points to walk through from `from` to `to_cell`, going through the tavern's
+## door if one end is in the hall (Vector2.INF in the list = step through the door).
+func villager_route(from: Vector2, to_cell: Vector2i) -> PackedVector2Array:
+	_build_walk_grids()
+	var ground := get_node("Ground") as TileMapLayer
+	var from_cell := ground.local_to_map(ground.to_local(from))
+	var from_hall := hall_rect().has_point(from_cell)
+	var to_hall := hall_rect().has_point(to_cell)
+	var route := PackedVector2Array()
+	if from_hall == to_hall:
+		_add_path(route, _hall_grid if to_hall else _grid, from_cell, to_cell)
+	elif from_hall:
+		_add_path(route, _hall_grid, from_cell, _hall_door())
+		route.append(Vector2.INF)
+		_add_path(route, _grid, _tavern_door(), to_cell)
+	else:
+		_add_path(route, _grid, from_cell, _tavern_door())
+		route.append(Vector2.INF)
+		_add_path(route, _hall_grid, _hall_door(), to_cell)
+	return route
+
+
+func _add_path(route: PackedVector2Array, grid: AStarGrid2D, from: Vector2i, to: Vector2i) -> void:
+	var path := grid.get_id_path(_nearest_free(grid, from), _nearest_free(grid, to), true)
+	if path.is_empty():
+		path = [to]
+	for cell in path:
+		route.append(cell_to_world(cell))
+
+
+## The walkable cell closest to `cell` (itself if it's walkable).
+func _nearest_free(grid: AStarGrid2D, cell: Vector2i) -> Vector2i:
+	for radius in 12:
+		for x in range(-radius, radius + 1):
+			for y in range(-radius, radius + 1):
+				if maxi(absi(x), absi(y)) != radius:
+					continue # just the ring at this distance
+				var c := cell + Vector2i(x, y)
+				if grid.region.has_point(c) and not grid.is_point_solid(c):
+					return c
+	return cell
+
+
+## A random walkable cell within `radius` of `center` (for villagers who wander about).
+func random_walkable_near(center: Vector2i, radius: int) -> Vector2i:
+	_build_walk_grids()
+	for attempt in 30:
+		var c := center + Vector2i(randi_range(-radius, radius), randi_range(-radius, radius))
+		if _grid.region.has_point(c) and not _grid.is_point_solid(c):
+			return c
+	return center
 
 
 ## Keeps the camera on the map, or on the hall while you're in it (also right after loading a save).
@@ -1771,8 +1948,14 @@ func _spawn_story_characters() -> void:
 		npc.set("frame_range", info.get("frames", Vector2i(-1, -1)))
 		npc.set("shop", info.get("shop", ""))
 		npc.set("talk_reach", info.get("reach", 28.0))
-		var origin := hall_rect().position if info["place"] == "tavern" else location_center(info["place"])
-		npc.position = to_local(cell_to_world(origin + info["offset"]))
+		npc.set("hair_color", info.get("hair_color", Color.WHITE))
+		if info.has("home"):
+			_house_owners[info["home"]] = info["name"]
+		if info.has("routine"):
+			npc.set("routine", _make_routine(info)) # it walks to the right spot by itself
+		else:
+			var origin := hall_rect().position if info["place"] == "tavern" else location_center(info["place"])
+			npc.position = to_local(cell_to_world(origin + info["offset"]))
 		add_child(npc)
 		if player:
 			move_child(npc, player.get_index())

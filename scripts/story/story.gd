@@ -9,6 +9,15 @@ const Text := preload("res://scripts/story/story_text.gd")
 
 var flags := {} ## flag name -> true
 var quests := {} ## quest id -> "active" or "done"
+var friendship := {} ## npc -> friendship points (HEART points per heart)
+var talked_today := {} ## npc -> true once you've chatted today
+var gifted_today := {} ## npc -> true once you've given them something today
+var gift_known := {} ## npc -> {item: "love" / "like" / "neutral" / "dislike"} you've found out
+
+const HEART := 100 ## friendship points per heart
+const MAX_HEARTS := 10
+const TALK_POINTS := 20 ## the first chat each day
+const GIFT_POINTS := {"love": 80, "like": 45, "neutral": 20, "dislike": -20}
 var player: Node ## set by the player; quests count and take items from them
 
 
@@ -16,24 +25,92 @@ var player: Node ## set by the player; quests count and take items from them
 func reset() -> void:
 	flags.clear()
 	quests.clear()
+	friendship.clear()
+	talked_today.clear()
+	gifted_today.clear()
+	gift_known.clear()
 	changed.emit()
 
 
 func get_state() -> Dictionary:
-	return {"flags": flags.duplicate(), "quests": quests.duplicate()}
+	return {
+		"flags": flags.duplicate(), "quests": quests.duplicate(),
+		"friendship": friendship.duplicate(), "talked_today": talked_today.duplicate(),
+		"gifted_today": gifted_today.duplicate(), "gift_known": gift_known.duplicate(true),
+	}
 
 
 func set_state(data: Dictionary) -> void:
 	flags = data.get("flags", {})
 	quests = data.get("quests", {})
+	friendship = data.get("friendship", {})
+	talked_today = data.get("talked_today", {})
+	gifted_today = data.get("gifted_today", {})
+	gift_known = data.get("gift_known", {})
 	changed.emit()
 
 
-## Which dialogue a character uses right now (first TALK rule whose condition holds).
+# --- Friendship ----------------------------------------------------------------
+
+## Whole hearts you have with someone (0 to MAX_HEARTS).
+func hearts(npc: String) -> int:
+	return int(friendship.get(npc, 0)) / HEART
+
+
+## True for the villagers you can make friends with (the ones with small talk).
+func can_befriend(npc: String) -> bool:
+	return Text.SMALL_TALK.has(npc)
+
+
+func add_friendship(npc: String, points: int) -> void:
+	var before := hearts(npc)
+	friendship[npc] = clampi(int(friendship.get(npc, 0)) + points, 0, HEART * MAX_HEARTS)
+	if hearts(npc) > before:
+		_notify("%s likes you more!  %d heart%s" % [Text.NPCS[npc]["name"], hearts(npc), "" if hearts(npc) == 1 else "s"])
+	changed.emit()
+
+
+## Called whenever you talk to someone: the first chat of the day makes you a bit closer.
+func talk_to(npc: String) -> void:
+	if can_befriend(npc) and not talked_today.has(npc):
+		talked_today[npc] = true
+		add_friendship(npc, TALK_POINTS)
+
+
+## A new day: everyone is ready to chat and get presents again.
+func new_day() -> void:
+	talked_today.clear()
+	gifted_today.clear()
+
+
+## How someone feels about a present: "love", "like", "neutral" or "dislike".
+func gift_taste(npc: String, item: String) -> String:
+	var tastes: Dictionary = Text.GIFTS.get(npc, {})
+	for taste in ["love", "like", "dislike"]:
+		if tastes.get(taste, []).has(item):
+			return taste
+	return "neutral"
+
+
+## Things you could give right now: [[item, how many], ...]
+func giftable_items() -> Array:
+	var items := []
+	if player == null:
+		return items
+	for item in player.crops:
+		if player.crops[item] > 0:
+			items.append([item, player.crops[item]])
+	if player.wood > 0:
+		items.append(["wood", player.wood])
+	return items
+
+
+## Which dialogue a character uses right now (first TALK rule whose conditions all hold).
 ## With no rule to follow, villagers make small talk that suits the time of day.
 func dialogue_for(npc_id: String) -> String:
 	for rule in Text.TALK.get(npc_id, []):
-		if not rule.has("if") or check(rule["if"]):
+		var conditions: Array = rule["if"] if rule.get("if") is Array else [rule.get("if", "")]
+		if conditions.all(func(c): return c == "" or check(c)):
 			return rule["say"]
 	if Text.SMALL_TALK.has(npc_id):
 		return "small:%s:%s" % [npc_id, _time_of_day()]
@@ -43,9 +120,18 @@ func dialogue_for(npc_id: String) -> String:
 ## The lines of a dialogue: [[speaker, text], ...]. Small talk is one line, a different
 ## one each time you chat (and each day).
 func lines_for(dialogue_key: String) -> Array:
-	if not dialogue_key.begins_with("small:"):
-		return Text.DIALOGUE.get(dialogue_key, {}).get("lines", [])
 	var parts := dialogue_key.split(":")
+	if parts[0] == "gift": # "gift:lily": what have you got for me?
+		var name: String = Text.NPCS[parts[1]]["name"]
+		if giftable_items().is_empty():
+			return [[name, "Hm? Your pockets look empty to me."]]
+		return [[name, Text.GIFT_ASK.get(parts[1], "Oh? Is that for me?")]]
+	if parts[0] == "give": # "give:lily:carrot": their reaction
+		var taste := gift_taste(parts[1], parts[2])
+		var reply: String = Text.GIFT_REPLIES.get(parts[1], {}).get(taste, Text.GIFT_REPLIES["default"][taste])
+		return [[Text.NPCS[parts[1]]["name"], reply % item_name(parts[2]).to_lower()]]
+	if parts[0] != "small":
+		return Text.DIALOGUE.get(dialogue_key, {}).get("lines", [])
 	var choices: Array = Text.SMALL_TALK[parts[1]].get(parts[2], [])
 	if choices.is_empty():
 		return []
@@ -57,6 +143,34 @@ func lines_for(dialogue_key: String) -> Array:
 
 
 var _chats := {} # npc -> how many times you've chatted (picks the next line)
+
+
+## Answers you can pick when a dialogue's lines are done: [[text, next dialogue key, enabled], ...]
+## (next "" = end the conversation). Empty = the conversation just ends.
+func choices_for(dialogue_key: String) -> Array:
+	var parts := dialogue_key.split(":")
+	match parts[0]:
+		"small":
+			var gifted := gifted_today.has(parts[1])
+			return [
+				["Give a gift" + (" (tomorrow)" if gifted else ""), "gift:" + parts[1], not gifted],
+				["Goodbye", "", true],
+			]
+		"gift":
+			var choices := []
+			for entry in giftable_items():
+				choices.append(["%s  x%d" % [item_name(entry[0]), entry[1]], "give:%s:%s" % [parts[1], entry[0]], true])
+			if not choices.is_empty():
+				choices.append(["Never mind", "", true])
+			return choices
+	var choices := []
+	for choice in Text.DIALOGUE.get(dialogue_key, {}).get("choices", []):
+		choices.append([choice[0], choice[1], true])
+	return choices
+
+
+func item_name(item: String) -> String:
+	return item.capitalize()
 
 
 func _clock() -> Node:
@@ -102,12 +216,28 @@ func check(condition: String) -> bool:
 			return quests.get(id) == "done"
 		"ready":
 			return quests.get(id) == "active" and quest_progress(id) >= Text.QUESTS[id]["amount"]
+		"hearts": # "hearts:lily:2" = at least 2 hearts with Lily
+			return hearts(id) >= int(parts[2])
 	push_warning("Unknown story condition: " + condition)
 	return false
 
 
-## Runs a dialogue's "do" list after the conversation ends.
+## Runs a dialogue's "do" list after the conversation ends (or when you pick an answer).
 func run(dialogue_key: String) -> void:
+	var key_parts := dialogue_key.split(":")
+	if key_parts[0] == "give": # handing over a present
+		var npc := key_parts[1]
+		var item := key_parts[2]
+		var taste := gift_taste(npc, item)
+		take_item(item, 1)
+		gifted_today[npc] = true
+		if not gift_known.has(npc):
+			gift_known[npc] = {}
+		gift_known[npc][item] = taste
+		add_friendship(npc, GIFT_POINTS[taste])
+		if player:
+			player.refresh_ui()
+		return
 	for action in Text.DIALOGUE.get(dialogue_key, {}).get("do", []):
 		var parts: PackedStringArray = action.split(":")
 		match parts[0]:
@@ -118,6 +248,8 @@ func run(dialogue_key: String) -> void:
 				_notify("New quest: " + Text.QUESTS[parts[1]]["title"])
 			"finish":
 				_finish_quest(parts[1])
+			"friend": # "friend:lily:30" = 30 friendship points
+				add_friendship(parts[1], int(parts[2]))
 			_:
 				push_warning("Unknown story action: " + action)
 	changed.emit()

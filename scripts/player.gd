@@ -55,6 +55,7 @@ const ANIMATIONS := {
 	"cast": "CASTING",
 	"reel": "REELING",
 	"caught": "CAUGHT",
+	"sit": "SITTING", # made by tools/make_sitting.py
 }
 const ONE_SHOT := ["axe", "attack", "hurt", "death", "dig", "water", "doing", "cast", "reel", "caught"]
 
@@ -119,6 +120,7 @@ var _clock_label: Label
 var _fade: ColorRect # black screen for sleeping
 var _message: Label # big centered text ("Day 2", "You passed out...")
 var _in_menu := false # shop open or sleeping: no moving or tools
+var _sitting := false # on a stool or the sofa (E or a move key gets up)
 var _fishing := Fishing.NONE
 var _swimming := false # in the water (not on the dock)
 @export var swim_speed: float = 40.0
@@ -161,7 +163,7 @@ func _physics_process(delta: float) -> void:
 	_update_clock()
 	if _in_menu:
 		velocity = Vector2.ZERO
-		_play("idle")
+		_play("sit" if _sitting else "idle") # e.g. chatting from a stool
 		return
 
 	if Input.is_action_just_pressed("inventory") and not _busy and _fishing == Fishing.NONE:
@@ -187,12 +189,18 @@ func _physics_process(delta: float) -> void:
 	var world := get_parent()
 	_swimming = world.has_method("is_water") and world.is_water(global_position + Vector2(0, 5))
 
+	if _sitting:
+		_update_sitting()
+		return
+
 	if Input.is_action_just_pressed("use"):
 		var farm := _farm()
 		if _swimming:
 			notify("You can't use that while swimming")
 		elif world.has_method("is_near_market") and world.is_near_market(global_position):
 			_open_shop()
+		elif world.has_method("seat_near") and not world.seat_near(global_position).is_empty():
+			_sit(world.seat_near(global_position))
 		elif _npc_in_reach():
 			_talk_to(_npc_in_reach())
 		elif world.has_method("is_near_bed") and world.is_near_bed(global_position):
@@ -224,6 +232,30 @@ func _physics_process(delta: float) -> void:
 		_play("idle")
 	else:
 		_play("run" if running else "walk")
+
+
+## Sits down on a seat from the map's seat_near().
+func _sit(seat: Dictionary) -> void:
+	_sitting = true
+	velocity = Vector2.ZERO
+	global_position = seat["position"]
+	_face(seat["face"])
+	_play("sit")
+	for layer in _layers:
+		layer.position.y = seat["lift"] # up onto the stool
+
+
+## While sitting: E talks to someone close by (or gets up), moving gets up.
+func _update_sitting() -> void:
+	var direction := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	if Input.is_action_just_pressed("use") and _npc_in_reach():
+		_talk_to(_npc_in_reach())
+		_play("sit") # stay seated
+	elif Input.is_action_just_pressed("use") or direction != Vector2.ZERO:
+		_sitting = false
+		for layer in _layers:
+			layer.position.y = 0.0
+		_play("idle")
 
 
 ## Called by goblins when their attack lands.
@@ -487,6 +519,7 @@ func _npc_in_reach() -> Node2D:
 
 func _talk_to(npc: Node2D) -> void:
 	_face(npc.global_position.x - global_position.x)
+	Story.talk_to(npc.npc_id) # the first chat of the day makes you closer
 	if npc.shop != "":
 		_open_menu(npc.shop) # e.g. Gus's smithy
 		return
@@ -651,6 +684,7 @@ func _face(x: float) -> void:
 
 func _play(anim: String) -> void:
 	for layer in _layers:
+		layer.visible = anim != "sit" or layer.sprite_frames.has_animation(anim) # no tools in hand
 		if layer.sprite_frames.has_animation(anim) and (layer.animation != anim or not layer.is_playing()):
 			layer.play(anim)
 
@@ -676,6 +710,8 @@ func _load_frames(prefix: String) -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	for anim in ANIMATIONS:
+		if anim == "sit" and prefix == "tools":
+			continue # empty-handed while sitting
 		var path := _find_strip(ANIMATIONS[anim], prefix)
 		if path.is_empty():
 			continue

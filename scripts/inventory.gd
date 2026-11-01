@@ -146,10 +146,49 @@ func _collect(tab: int) -> Array[Dictionary]:
 					info["icon"] = Farm.crop_texture(Farm.CROP_TYPES[player.seed_index], Farm.STAGES)
 				list.append(info)
 		Tab.PEOPLE:
+			var text: Dictionary = Story.Text.ABOUT
+			for id in Story.Text.NPCS:
+				var npc: Dictionary = Story.Text.NPCS[id]
+				var info := {"name": npc["name"], "kind": "Willowbrook", "count": 0,
+					"icon": _portrait(npc["hair"], npc.get("hair_color", Color.WHITE)),
+					"text": text.get(id, "")}
+				if Story.can_befriend(id):
+					info["kind"] = "%d / %d hearts" % [Story.hearts(id), Story.MAX_HEARTS]
+					info["text"] += _known_gifts(id)
+				list.append(info)
 			list.append({"name": "Merchant", "kind": "Willowbrook Village", "count": 0,
-				"icon": load(UI + "playercount.png"),
+				"icon": _portrait("curlyhair", Color.WHITE),
 				"text": "Runs the market south of the statue.\nBuys crops and fish, sells seeds."})
 	return list
+
+
+## A head-and-shoulders picture of a villager: the idle frame's body with their hair on top.
+func _portrait(hair: String, hair_color: Color) -> Texture2D:
+	var human := "res://assets/Sunnyside_World_Assets/Characters/Human/IDLE/"
+	var image: Image = load(human + "base_idle_strip9.png").get_image().get_region(Rect2i(36, 16, 24, 24))
+	image.convert(Image.FORMAT_RGBA8)
+	var hair_image: Image = load(human + "%s_idle_strip9.png" % hair).get_image().get_region(Rect2i(36, 16, 24, 24))
+	hair_image.convert(Image.FORMAT_RGBA8)
+	for y in 24:
+		for x in 24:
+			var c := hair_image.get_pixel(x, y)
+			if c.a > 0.0:
+				image.set_pixel(x, y, c * hair_color)
+	return ImageTexture.create_from_image(image)
+
+
+## "Loves: Fish. Likes: Egg." for the presents you've already seen them react to.
+func _known_gifts(id: String) -> String:
+	var known: Dictionary = Story.gift_known.get(id, {})
+	var lines := ""
+	for taste in ["love", "like", "dislike"]:
+		var items := []
+		for item in known:
+			if known[item] == taste:
+				items.append(item.capitalize())
+		if not items.is_empty():
+			lines += "\n%s: %s" % [{"love": "Loves", "like": "Likes", "dislike": "Dislikes"}[taste], ", ".join(items)]
+	return lines if lines != "" else "\nGive them presents to learn what they like."
 
 
 ## Items that aren't crops: name -> what the info card says

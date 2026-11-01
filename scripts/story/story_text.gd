@@ -3,13 +3,18 @@ extends RefCounted
 ## Writing the story = editing this file. (When we add Russian, this is the text to translate.)
 ##
 ## TALK: what each character says. Rules are checked top to bottom; the first one whose
-##   condition is true is used. Conditions:
+##   condition is true is used ("if" can also be a list: all must be true). Conditions:
 ##     "flag:name"    the story flag is set       "!flag:name"  it's not set
 ##     "quest:id"     the quest is active          "ready:id"    active and you have what it needs
 ##     "done:id"      the quest was finished       (no "if")     always
+##     "hearts:npc:2" at least 2 hearts with them
 ## DIALOGUE: lines are [speaker, text]. "do" runs after the last line:
 ##     "flag:name"    set a story flag
 ##     "quest:id"     start a quest                "finish:id"   hand in a quest (takes items, gives reward)
+##     "friend:npc:30"  30 friendship points (negative takes some away)
+##   "choices": [[answer, next dialogue], ...] lets you pick what to say after the last line
+##   (next "" = end the conversation).
+## FRIENDSHIP: chatting once a day and gifts (one a day) fill hearts with villagers; see GIFTS.
 ## QUESTS: "item" + "amount" is what to bring, "to" is who to bring it to.
 ## SMALL_TALK: what villagers say when there's nothing else to talk about, by time of day
 ##   (morning until 11, day until 5 PM, evening until 10 PM, then night). One line per chat.
@@ -21,7 +26,9 @@ extends RefCounted
 ##   Walking about:   routine = [[hour, stop], ...] with stops "home", "work", "tavern":
 ##       work   {"spot": lake_road / forest_road / market / plaza / meadow, "offset", "anim"
 ##              (a Characters/Human folder), "wander": tiles to stroll around in}
-##       seat   their stool in the tavern hall      home_spot  where they stand at home
+##       seat   where they sit in the tavern hall (seat_face: 1 = facing right, -1 = left;
+##              sit_lift: how far up their seat is, a stool by default)
+##       home_spot  where they stand at home
 ##   hair_color tints the hair
 const NPCS := {
 	# Mira runs the tavern on the upper street, from behind the bar
@@ -44,15 +51,83 @@ const NPCS := {
 	# Bram the woodcutter, at the edge of the pines
 	"bram": {"name": "Bram", "hair": "shorthair", "hair_color": Color(0.55, 0.35, 0.25), "home": 2,
 		"routine": [[6.0, "home"], [8.0, "work"], [18.0, "tavern"], [23.5, "home"]],
-		"work": {"spot": "forest_road", "anim": "AXE"}, "seat": Vector2i(9, 6)},
+		"work": {"spot": "forest_road", "anim": "AXE"}, "seat": Vector2i(9, 6), "seat_face": -1.0},
 	# Lily: shy, helps out at the market
 	"lily": {"name": "Lily", "hair": "curlyhair", "hair_color": Color(1.0, 0.7, 0.6), "home": 3,
 		"routine": [[6.0, "home"], [9.0, "work"], [17.5, "tavern"], [21.5, "home"]],
-		"work": {"spot": "market", "offset": Vector2i(5, -2)}, "seat": Vector2i(1, 10)},
+		"work": {"spot": "market", "offset": Vector2i(5, -2)}, "seat": Vector2i(1, 10), "sit_lift": -2.0},
 	# Rosa keeps the plaza's flowers, and knows everyone's business
 	"rosa": {"name": "Rosa", "hair": "longhair", "hair_color": Color(0.45, 0.3, 0.3), "home": 4,
 		"routine": [[6.0, "home"], [8.0, "work"], [18.0, "tavern"], [22.0, "home"]],
-		"work": {"spot": "plaza", "offset": Vector2i(-5, 2), "anim": "WATERING"}, "seat": Vector2i(3, 12)},
+		"work": {"spot": "plaza", "offset": Vector2i(-5, 2), "anim": "WATERING"}, "seat": Vector2i(3, 12), "sit_lift": -6.0},
+}
+
+## A line about each person for the People tab of the inventory.
+const ABOUT := {
+	"mira": "Runs the tavern on the upper street. Seems to know everyone.",
+	"gus": "The blacksmith. Hammers away at his anvil all day. Sells tools.",
+	"tom": "Fishes where the road meets the lake. Full of stories.",
+	"pip": "Tom's grandson. Fastest runner on the island (he says).",
+	"hazel": "Grumpy old farmer. Digs in the meadow from dawn.",
+	"bram": "Woodcutter at the edge of the pines. Always cheerful.",
+	"lily": "Shy. Helps out at the market and likes pretty things.",
+	"rosa": "Waters the plaza's flowers and knows everyone's business.",
+}
+
+## Presents: what each villager loves, likes and can't stand (everything else is fine).
+## Items: carrot, wheat, potato, cabbage, sunflower, pumpkin, fish, egg, milk, wood.
+const GIFTS := {
+	"tom": {"love": ["fish"], "like": ["egg", "potato"], "dislike": ["sunflower"]},
+	"pip": {"love": ["sunflower", "pumpkin"], "like": ["carrot", "egg"], "dislike": ["cabbage"]},
+	"hazel": {"love": ["carrot", "milk"], "like": ["potato", "wheat"], "dislike": ["fish"]},
+	"bram": {"love": ["egg"], "like": ["potato", "wheat", "milk"], "dislike": ["wood"]},
+	"lily": {"love": ["sunflower"], "like": ["cabbage", "carrot"], "dislike": ["fish"]},
+	"rosa": {"love": ["pumpkin", "milk"], "like": ["egg", "wheat"], "dislike": ["wood"]},
+}
+
+## What they say when you offer a present (before you pick one)
+const GIFT_ASK := {
+	"tom": "A present for an old man? Let's see it.",
+	"pip": "Ooh! Is it a present? Is it? IS IT?",
+	"hazel": "Hmph. What is it?",
+	"bram": "For me? You shouldn't have! ...What is it?",
+	"lily": "F-for me? Oh... you didn't have to...",
+	"rosa": "A gift! Oh, you're a dear. Let me see!",
+}
+
+## How they react, by taste ("%s" = the item). Missing ones use "default".
+const GIFT_REPLIES := {
+	"default": {
+		"love": "Oh, a %s! I love these. Thank you!",
+		"like": "A %s, how nice. Thank you.",
+		"neutral": "A %s? Thanks.",
+		"dislike": "...A %s. Well. Thank you, I suppose.",
+	},
+	"tom": {
+		"love": "A %s! Fresh as morning. You've made an old fisherman very happy.",
+		"dislike": "A %s? What would I do with this... smell it?",
+	},
+	"pip": {
+		"love": "WOW! A %s! This is the best day EVER!",
+		"dislike": "Eww, a %s! ...Grandpa says I have to say thank you. Thank you.",
+	},
+	"hazel": {
+		"love": "...A %s. A good one, too. Hmph. Thank you.",
+		"like": "A %s. Grown right, by the look of it.",
+		"dislike": "A %s?! Get that thing away from my garden.",
+	},
+	"bram": {
+		"love": "A %s! That's breakfast sorted. You're a good friend!",
+		"dislike": "Ha! A %s! I've got about a thousand of those.",
+	},
+	"lily": {
+		"love": "A %s... it's beautiful. I'll keep it by my window.",
+		"dislike": "Oh... a %s. It's, um... very... fishy.",
+	},
+	"rosa": {
+		"love": "A %s! Oh, wait until I tell everyone what you gave me!",
+		"dislike": "A %s, dear? How... rustic.",
+	},
 }
 
 const SMALL_TALK := {
@@ -150,6 +225,13 @@ const SMALL_TALK := {
 }
 
 const TALK := {
+	# Heart events: something personal once you're friends (each happens once)
+	"tom": [{"if": ["hearts:tom:2", "!flag:tom_h2"], "say": "tom_h2"}],
+	"pip": [{"if": ["hearts:pip:2", "!flag:pip_h2"], "say": "pip_h2"}],
+	"hazel": [{"if": ["hearts:hazel:2", "!flag:hazel_h2"], "say": "hazel_h2"}],
+	"bram": [{"if": ["hearts:bram:2", "!flag:bram_h2"], "say": "bram_h2"}],
+	"lily": [{"if": ["hearts:lily:2", "!flag:lily_h2"], "say": "lily_h2"}],
+	"rosa": [{"if": ["hearts:rosa:2", "!flag:rosa_h2"], "say": "rosa_h2"}],
 	"mira": [
 		{"if": "ready:firewood", "say": "mira_firewood_done"},
 		{"if": "quest:firewood", "say": "mira_firewood_waiting"},
@@ -180,6 +262,74 @@ const DIALOGUE := {
 		],
 		"do": ["finish:firewood"],
 	},
+	# --- Heart events (2 hearts) ---
+	"tom_h2": {
+		"lines": [
+			["Old Tom", "You know, you remind me of someone. Came here on a boat, just like you."],
+			["Old Tom", "Funny thing is... I can't remember the boat ever leaving."],
+		],
+		"choices": [["Maybe it never left?", "tom_h2_a"], ["Do you want to leave?", "tom_h2_b"]],
+		"do": ["flag:tom_h2"],
+	},
+	"tom_h2_a": {"lines": [["Old Tom", "Ha! Maybe it's at the bottom of the lake, with my patience."]], "do": ["friend:tom:20"]},
+	"tom_h2_b": {
+		"lines": [["Old Tom", "Leave? ...I've never once thought about it. Isn't that strange? Never once."]],
+		"do": ["friend:tom:30", "flag:tom_never_left"],
+	},
+	"pip_h2": {
+		"lines": [
+			["Pip", "Wanna know a secret? The statue MOVES at night."],
+			["Pip", "I put a pebble by its foot, and in the morning it was on the other side!"],
+		],
+		"choices": [["I believe you!", "pip_h2_a"], ["Someone moved the pebble.", "pip_h2_b"]],
+		"do": ["flag:pip_h2"],
+	},
+	"pip_h2_a": {"lines": [["Pip", "Really?! You're the best! Don't tell Grandpa, he'll say I'm silly."]], "do": ["friend:pip:30"]},
+	"pip_h2_b": {"lines": [["Pip", "Nuh-uh! ...Maybe. But what if nobody did?"]], "do": ["friend:pip:5"]},
+	"hazel_h2": {
+		"lines": [
+			["Hazel", "Hmph. You keep at it. Most don't."],
+			["Hazel", "My husband planted the first carrots on this island. Or... I think he did."],
+			["Hazel", "Funny. I can't picture his face anymore."],
+		],
+		"choices": [["That must be hard.", "hazel_h2_a"], ["Maybe write it all down?", "hazel_h2_b"]],
+		"do": ["flag:hazel_h2"],
+	},
+	"hazel_h2_a": {"lines": [["Hazel", "It is. ...Thank you for saying so. Now go water something."]], "do": ["friend:hazel:30"]},
+	"hazel_h2_b": {
+		"lines": [["Hazel", "Write it down... Not a bad idea, youngster. Not bad at all."]],
+		"do": ["friend:hazel:20", "flag:hazel_journal"],
+	},
+	"bram_h2": {
+		"lines": [
+			["Bram", "Can I tell you something odd? I cut a notch in every stump I leave."],
+			["Bram", "Next morning, the trees are back. Notch and all."],
+		],
+		"choices": [["That's amazing!", "bram_h2_a"], ["That's... creepy.", "bram_h2_b"]],
+		"do": ["flag:bram_h2"],
+	},
+	"bram_h2_a": {"lines": [["Bram", "Magic or curse, it keeps me in work! Ha!"]], "do": ["friend:bram:20"]},
+	"bram_h2_b": {"lines": [["Bram", "Aye. I try not to think about it. Chopping helps."]], "do": ["friend:bram:25"]},
+	"lily_h2": {
+		"lines": [
+			["Lily", "I... I drew a map of the island. But I don't know what's past the edge."],
+			["Lily", "Do you?"],
+		],
+		"choices": [["Let's find out together.", "lily_h2_a"], ["Nothing, probably.", "lily_h2_b"]],
+		"do": ["flag:lily_h2"],
+	},
+	"lily_h2_a": {"lines": [["Lily", "T-together? ...I'd like that. Very much."]], "do": ["friend:lily:40", "flag:lily_together"]},
+	"lily_h2_b": {"lines": [["Lily", "Oh. Yes. Probably nothing..."]], "do": ["friend:lily:5"]},
+	"rosa_h2": {
+		"lines": [
+			["Rosa", "Between you and me, dear: nobody here remembers their birthday."],
+			["Rosa", "I asked everyone. Not one!"],
+		],
+		"choices": [["When's yours?", "rosa_h2_a"], ["That's just gossip.", "rosa_h2_b"]],
+		"do": ["flag:rosa_h2"],
+	},
+	"rosa_h2_a": {"lines": [["Rosa", "Mine? It's... oh. Oh my."]], "do": ["friend:rosa:30", "flag:rosa_birthday"]},
+	"rosa_h2_b": {"lines": [["Rosa", "Gossip is just the truth wearing a nice hat, dear."]], "do": ["friend:rosa:15"]},
 	"mira_idle": {
 		"lines": [
 			["Mira", "Funny... I can't remember the last time a ship came by."],

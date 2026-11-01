@@ -104,7 +104,7 @@ func _process(delta: float) -> void:
 	var distance := global_position.distance_to(player.global_position) if player else INF
 	if not routine.is_empty() and _clock:
 		_follow_routine(delta)
-	var idle := _layers[0].animation == "idle"
+	var idle := _layers[0].animation == "idle" # sitting folk keep facing their table
 	if distance < 80.0 and turn_to_player and idle:
 		_face(player.global_position.x - global_position.x)
 	# Name fades in when you walk up to them
@@ -150,6 +150,7 @@ func _follow_routine(delta: float) -> void:
 	if absf(step.x) > 0.5:
 		_face(step.x)
 	_play("walk")
+	_lift(0.0)
 	_collision.set_deferred("disabled", true) # don't get stuck on the player
 
 
@@ -162,8 +163,11 @@ func _set_route() -> void:
 
 func _arrive() -> void:
 	_collision.set_deferred("disabled", false)
-	var anim: String = routine["stops"][_stop].get("anim", "IDLE").to_lower()
-	_play(anim)
+	var stop: Dictionary = routine["stops"][_stop]
+	_play(stop.get("anim", "IDLE").to_lower())
+	_lift(stop.get("lift", 0.0)) # up onto a stool or the sofa
+	if stop.has("face"):
+		_face(stop["face"])
 
 
 ## Which stop of the schedule we're in at this time of day.
@@ -189,6 +193,11 @@ func _play(anim: String) -> void:
 		layer.visible = layer.sprite_frames.has_animation(anim)
 		if layer.visible and layer.animation != anim:
 			layer.play(anim)
+
+
+func _lift(height: float) -> void:
+	for layer in _layers:
+		layer.position.y = height
 
 
 func _face(dx: float) -> void:

@@ -125,6 +125,12 @@ const HALL_STOOLS := [ # 1 tile each, never solid
 	Vector2(14, 7), Vector2(17, 7), Vector2(14, 10.5),
 ]
 const TAVERN_SIGN := Vector2i(0, 0) # sheet cell: hanging sign with a mug
+# Places on the corner sofa you can sit (hall tiles); the stools are seats too
+const HALL_SOFA_SEATS := [
+	[Vector2i(1, 9), -2.0], [Vector2i(1, 10), -2.0], [Vector2i(1, 11), -2.0], # the tall seat
+	[Vector2i(2, 12), -6.0], [Vector2i(3, 12), -6.0], [Vector2i(4, 12), -6.0], # the bottom seat
+]
+const SEAT_REACH := 12.0 # how close you stand to a seat to sit on it with E
 const DOCK_PLANK := Vector2i(40, 5)
 const DOCK_END := Vector2i(40, 6)
 const DOCK_POST_LEFT := Vector2i(39, 5)
@@ -1522,6 +1528,7 @@ func _spawn_clock() -> void:
 	var ranch := get_node_or_null("Ranch")
 	if ranch:
 		clock.new_day.connect(ranch.on_new_day)
+	clock.new_day.connect(func(_day): Story.new_day()) # chats and presents again
 	var player := get_node_or_null("Player")
 	if player and player.has_method("on_passed_out"):
 		clock.passed_out.connect(player.on_passed_out)
@@ -1701,6 +1708,50 @@ func _hall_solid_rects() -> Array[Rect2]:
 	return rects
 
 
+## A free seat right next to world_pos: {"position", "lift", "face"}, or {} if there's none.
+## Seats are the tavern's stools and its sofa (anywhere a villager isn't already sitting).
+func seat_near(world_pos: Vector2) -> Dictionary:
+	if tavern_rect.size == Vector2i.ZERO:
+		return {}
+	var corner := cell_to_world(hall_rect().position) - Vector2(8, 8)
+	var seats: Array[Dictionary] = []
+	for stool in HALL_STOOLS:
+		var spot: Vector2 = corner + stool * 16 + Vector2(8, 8)
+		seats.append({"position": spot, "lift": -9.0, "face": _toward_table(spot)})
+	for seat in HALL_SOFA_SEATS:
+		seats.append({"position": cell_to_world(hall_rect().position + seat[0]), "lift": seat[1], "face": 1.0})
+	var best := {}
+	var best_distance := SEAT_REACH
+	for seat in seats:
+		var distance: float = world_pos.distance_to(seat["position"])
+		if distance < best_distance and not _seat_taken(seat["position"]):
+			best = seat
+			best_distance = distance
+	return best
+
+
+## 1 or -1: which way someone on a stool at `spot` turns to face the nearest table.
+func _toward_table(spot: Vector2) -> float:
+	var corner := cell_to_world(hall_rect().position) - Vector2(8, 8)
+	var nearest := INF
+	var face := 1.0
+	for item in HALL_LAYOUT:
+		if item[1] != 5: # the tables row of the props sheet
+			continue
+		var center: Vector2 = corner + item[2] * 16 + Vector2(16, 16)
+		if spot.distance_to(center) < nearest:
+			nearest = spot.distance_to(center)
+			face = signf(center.x - spot.x)
+	return face if nearest < 48.0 else 1.0 # at the bar: face right
+
+
+func _seat_taken(spot: Vector2) -> bool:
+	for npc in get_tree().get_nodes_in_group("npc"):
+		if npc.global_position.distance_to(spot) < 6.0:
+			return true
+	return false
+
+
 ## Doors that lead somewhere else: stepping into the tavern's door takes you into the hall,
 ## and the hall's door takes you back out to the street.
 func _check_doors(cell: Vector2i, player: Node2D) -> void:
@@ -1749,8 +1800,13 @@ func _make_routine(info: Dictionary) -> Dictionary:
 			"anim": work.get("anim", "IDLE"),
 			"wander": work.get("wander", 0),
 		}
-	if info.has("seat"):
-		stops["tavern"] = {"cell": hall_rect().position + info["seat"]}
+	if info.has("seat"): # sitting down, on a stool unless "sit_lift" says otherwise
+		stops["tavern"] = {
+			"cell": hall_rect().position + info["seat"],
+			"anim": "SITTING",
+			"lift": info.get("sit_lift", -9.0),
+			"face": info.get("seat_face", 1.0),
+		}
 	return {"schedule": info["routine"], "stops": stops}
 
 

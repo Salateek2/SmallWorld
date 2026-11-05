@@ -17,11 +17,12 @@ const COLUMNS := 5
 const ROWS := 3
 const SLOT := 64
 
-enum Tab { ITEMS, TOOLS, PEOPLE }
+enum Tab { ITEMS, TOOLS, PEOPLE, JOURNAL }
 const TABS := [
 	{"name": "Items", "icon": "basket.png"},
 	{"name": "Tools", "icon": "hand_open_01.png"},
 	{"name": "People", "icon": "playercount.png"},
+	{"name": "Clues", "icon": "search.png"},
 ]
 const DARK_TEXT := Color(0.24, 0.16, 0.12)
 const SOFT_TEXT := Color(0.55, 0.6, 0.7)
@@ -159,6 +160,19 @@ func _collect(tab: int) -> Array[Dictionary]:
 			list.append({"name": "Merchant", "kind": "Willowbrook Village", "count": 0,
 				"icon": _portrait("curlyhair", Color.WHITE),
 				"text": "Runs the market south of the statue.\nBuys crops and fish, sells seeds."})
+		Tab.JOURNAL:
+			for clue in _collect_clues():
+				list.append(clue)
+	return list
+
+
+## Clues you've found, for the journal tab.
+func _collect_clues() -> Array:
+	var list := []
+	for id in Story.clues:
+		var clue: Dictionary = Story.Text.CLUES[id]
+		list.append({"name": clue["title"], "kind": "Clue", "count": 0,
+			"icon": load(UI + "search.png"), "text": clue["text"]})
 	return list
 
 

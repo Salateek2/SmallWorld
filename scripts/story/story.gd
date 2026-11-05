@@ -13,6 +13,8 @@ var friendship := {} ## npc -> friendship points (HEART points per heart)
 var talked_today := {} ## npc -> true once you've chatted today
 var gifted_today := {} ## npc -> true once you've given them something today
 var gift_known := {} ## npc -> {item: "love" / "like" / "neutral" / "dislike"} you've found out
+var clues: Array = [] ## clue ids for the journal, in the order you found them
+var stamps := {} ## flag or quest id -> the day it was set / finished (for "after:" conditions)
 
 const HEART := 100 ## friendship points per heart
 const MAX_HEARTS := 10
@@ -29,6 +31,8 @@ func reset() -> void:
 	talked_today.clear()
 	gifted_today.clear()
 	gift_known.clear()
+	clues.clear()
+	stamps.clear()
 	changed.emit()
 
 
@@ -37,6 +41,7 @@ func get_state() -> Dictionary:
 		"flags": flags.duplicate(), "quests": quests.duplicate(),
 		"friendship": friendship.duplicate(), "talked_today": talked_today.duplicate(),
 		"gifted_today": gifted_today.duplicate(), "gift_known": gift_known.duplicate(true),
+		"clues": clues.duplicate(), "stamps": stamps.duplicate(),
 	}
 
 
@@ -47,6 +52,8 @@ func set_state(data: Dictionary) -> void:
 	talked_today = data.get("talked_today", {})
 	gifted_today = data.get("gifted_today", {})
 	gift_known = data.get("gift_known", {})
+	clues = data.get("clues", [])
+	stamps = data.get("stamps", {})
 	changed.emit()
 
 
@@ -129,7 +136,11 @@ func lines_for(dialogue_key: String) -> Array:
 	if parts[0] == "give": # "give:lily:carrot": their reaction
 		var taste := gift_taste(parts[1], parts[2])
 		var reply: String = Text.GIFT_REPLIES.get(parts[1], {}).get(taste, Text.GIFT_REPLIES["default"][taste])
-		return [[Text.NPCS[parts[1]]["name"], reply % item_name(parts[2]).to_lower()]]
+		var thing := _with_article(parts[2])
+		var before := reply.substr(0, reply.find("%s")).strip_edges()
+		if before == "" or before.right(1) in [".", "!", "?"]:
+			thing = thing.capitalize().split(" ")[0] + thing.substr(thing.find(" ")) # start of a sentence
+		return [[Text.NPCS[parts[1]]["name"], reply % thing]]
 	if parts[0] != "small":
 		return Text.DIALOGUE.get(dialogue_key, {}).get("lines", [])
 	var choices: Array = Text.SMALL_TALK[parts[1]].get(parts[2], [])
@@ -173,10 +184,23 @@ func item_name(item: String) -> String:
 	return item.capitalize()
 
 
+## "a carrot", "an egg", "some milk".
+func _with_article(item: String) -> String:
+	if item in ["milk", "wheat", "wood"]:
+		return "some " + item
+	return ("an " if item[0] in "aeiou" else "a ") + item
+
+
 func _clock() -> Node:
 	if player == null or player.get_parent() == null:
 		return null
 	return player.get_parent().get_node_or_null("DayNight")
+
+
+## Today's day number (1 on a new game).
+func today() -> int:
+	var clock := _clock()
+	return clock.day if clock else 1
 
 
 ## "morning", "day", "evening" or "night", from the game clock.
@@ -206,7 +230,7 @@ func check(condition: String) -> bool:
 		return not check(condition.substr(1))
 	var parts := condition.split(":")
 	var what := parts[0]
-	var id := parts[1]
+	var id := parts[1] if parts.size() > 1 else ""
 	match what:
 		"flag":
 			return flags.has(id)
@@ -218,6 +242,12 @@ func check(condition: String) -> bool:
 			return quests.get(id) == "active" and quest_progress(id) >= Text.QUESTS[id]["amount"]
 		"hearts": # "hearts:lily:2" = at least 2 hearts with Lily
 			return hearts(id) >= int(parts[2])
+		"day": # "day:7" = it's day 7 or later
+			return today() >= int(id)
+		"evening": # from 5 PM on
+			return _time_of_day() in ["evening", "night"]
+		"after": # "after:firewood:1" = at least 1 day since that flag was set / quest finished
+			return stamps.has(id) and today() >= int(stamps[id]) + int(parts[2])
 	push_warning("Unknown story condition: " + condition)
 	return false
 
@@ -243,6 +273,7 @@ func run(dialogue_key: String) -> void:
 		match parts[0]:
 			"flag":
 				flags[parts[1]] = true
+				stamps[parts[1]] = today()
 			"quest":
 				quests[parts[1]] = "active"
 				_notify("New quest: " + Text.QUESTS[parts[1]]["title"])
@@ -250,6 +281,25 @@ func run(dialogue_key: String) -> void:
 				_finish_quest(parts[1])
 			"friend": # "friend:lily:30" = 30 friendship points
 				add_friendship(parts[1], int(parts[2]))
+			"tool": # "tool:hoe" = hand the player a tool
+				if player:
+					player.give_tool(player.Tool[parts[1].to_upper()])
+					_notify("You got the %s!" % player.TOOL_NAMES[player.Tool[parts[1].to_upper()]].to_lower())
+			"seeds": # "seeds:carrot:6"
+				if player:
+					player.seeds[parts[1]] = player.seeds.get(parts[1], 0) + int(parts[2])
+					player.refresh_ui()
+			"coins": # "coins:50"
+				if player:
+					player.coins += int(parts[1])
+					player.refresh_ui()
+			"clue": # "clue:locket" = a new page in the journal
+				if not clues.has(parts[1]):
+					clues.append(parts[1])
+					_notify("New clue in your journal: " + Text.CLUES[parts[1]]["title"])
+			"chapter": # "chapter:1" = the chapter is over: a big banner
+				if player and player.has_method("show_big_message"):
+					player.show_big_message(Text.CHAPTERS[parts[1]])
 			_:
 				push_warning("Unknown story action: " + action)
 	changed.emit()
@@ -265,21 +315,35 @@ func current_quest() -> String:
 	return ""
 
 
-## How many of the needed items the player has (capped at the amount needed).
+## How far along a quest is (capped at the amount needed): items you have for "item"
+## quests, villagers you're friends with (1+ heart) for "friends", hearts for "hearts_with".
 func quest_progress(id: String) -> int:
 	var quest: Dictionary = Text.QUESTS[id]
-	return mini(item_count(quest["item"]), quest["amount"])
+	var have := 0
+	if quest.has("item"):
+		have = item_count(quest["item"])
+	elif quest.has("friends"):
+		for npc in Text.SMALL_TALK:
+			if npc != quest.get("not", "") and hearts(npc) >= 1:
+				have += 1
+	elif quest.has("hearts_with"):
+		have = hearts(quest["hearts_with"])
+	return mini(have, quest.get("amount", 0))
 
 
-## e.g. "Bring Mira 6 wood (2/6)"
+## e.g. "Bring Isla 6 wood (2/6)" (just the goal for quests with nothing to count)
 func quest_goal_text(id: String) -> String:
 	var quest: Dictionary = Text.QUESTS[id]
+	if quest.get("amount", 0) == 0:
+		return quest["goal"]
 	return "%s (%d/%d)" % [quest["goal"], quest_progress(id), quest["amount"]]
 
 
 func _finish_quest(id: String) -> void:
 	var quest: Dictionary = Text.QUESTS[id]
-	take_item(quest["item"], quest["amount"])
+	stamps[id] = today()
+	if quest.has("item") and quests.get(id) == "active":
+		take_item(quest["item"], quest["amount"])
 	var reward: Dictionary = quest.get("reward", {})
 	if player and reward.has("coins"):
 		player.coins += reward["coins"]

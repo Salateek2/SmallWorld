@@ -1,6 +1,6 @@
 extends StaticBody2D
 ## SmallWorld villager: a Sunnyside human. Created at runtime by map_generator.
-## Some stand in one place playing one animation (Mira idles behind her bar, Gus hammers).
+## Some stand in one place playing one animation (Isla idles behind her bar, Gus hammers).
 ## Villagers with a routine walk the roads through the day: home in the morning, off to
 ## work, to the tavern in the evening and home again at night (see NPCS in story_text.gd).
 ## Turns to face the player when they come close (unless busy working). Characters with an
@@ -20,7 +20,7 @@ const WALK_SPEED := 40.0 # pixels per second (the player walks faster)
 @export var face_right := false ## start facing right
 @export var frame_range := Vector2i(-1, -1) ## only play these frames of the animation (first, last)
 @export var shop := "" ## script of a shop window to open when you press E (empty = talk)
-@export var talk_reach := 28.0 ## how close the player must be to talk (Mira: across her counter)
+@export var talk_reach := 28.0 ## how close the player must be to talk (Isla: across her counter)
 ## Daily routine, filled in by map_generator: "schedule" ([[hour, stop], ...]) and "stops"
 ## (stop -> {"cell", "anim", "wander"}). Empty = stands still.
 var routine := {}

@@ -9,6 +9,8 @@ const VERSION := 1
 
 ## Set by the title screen's "Continue": the map applies the save once it has loaded.
 var load_requested := false
+## Set by "New Game": the map plays the intro and starts the story once it has loaded.
+var intro_requested := false
 
 
 func has_save() -> bool:
@@ -61,11 +63,13 @@ func apply(world: Node) -> void:
 ## Starts fresh: forget the story. (The old save is replaced the next time the game saves.)
 func new_game() -> void:
 	load_requested = false
+	intro_requested = true
 	Story.reset()
 
 
 func continue_game() -> void:
 	load_requested = true
+	intro_requested = false
 	Story.reset()
 
 

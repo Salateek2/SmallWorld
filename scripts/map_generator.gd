@@ -81,7 +81,7 @@ const HALL_DOOR_X := 10
 const HALL_MARGIN := 600.0 # black space around the hall that the camera may show
 # [sheet column, sheet row, tile in the hall (top-left of the 2 x 2 prop), solid width (0 = walk through)]
 const HALL_LAYOUT := [
-	# along the back wall (rows 0-1: drawn behind everyone, Mira included)
+	# along the back wall (rows 0-1: drawn behind everyone, Isla included)
 	[0, 7, Vector2(2, 1), 26], # fireplace
 	[1, 7, Vector2(4.25, 0), 0], # torch
 	[3, 6, Vector2(6.25, 1), 0], # bottle shelves behind the bar
@@ -102,7 +102,7 @@ const HALL_LAYOUT := [
 # Position in hall pixels; walls = what you bump into, also in hall pixels;
 # under = drawn below people (they sit on it) instead of in front of them.
 const HALL_PIECES := [
-	{ # the corner bar, Mira inside its L
+	{ # the corner bar, Isla inside its L
 		"texture": "res://assets/tavern/bar_corner.png",
 		"position": Vector2(88, 17),
 		"walls": [
@@ -304,7 +304,7 @@ var _changes: Array = [] # trees felled and plants cut this game (saved, replaye
 @export_storage var trough_cell := Vector2i()
 ## The smithy's furnace (its fire and chimney smoke are added when the game starts)
 @export_storage var forge_cell := Vector2i(-1, -1)
-## Mira's tavern (the furniture and sign are added when the game starts)
+## Isla's tavern (the furniture and sign are added when the game starts)
 @export_storage var tavern_rect := Rect2i()
 ## Raised ground: one rectangle per plateau (the village's upper level, hills)
 @export_storage var plateaus: Array[Rect2i] = []
@@ -335,12 +335,14 @@ func _ready() -> void:
 	_spawn_clock()
 	_spawn_merchant()
 	_spawn_story_characters()
-	_build_tavern() # after Mira, so the bar is drawn in front of her
+	_build_tavern() # after Isla, so the bar is drawn in front of her
 	_setup_world_bounds()
 	_place_player()
 	_spawn_goblins()
 	if SaveGame.load_requested:
 		SaveGame.apply(self) # "Continue" on the title screen
+	elif SaveGame.intro_requested:
+		_start_intro.call_deferred() # "New Game": wake up by the lake
 
 
 func generate() -> void:
@@ -638,7 +640,7 @@ func _make_village(layers: Dictionary) -> Vector2i:
 	]
 	for i in spots.size():
 		_build_house(layers, c + spots[i], 4, colours[(first + i) % colours.size()], _rng.randf() < CHIMNEY_CHANCE)
-	# Mira's tavern in the middle of the upper street: bigger, furnished in _furnish_tavern
+	# Isla's tavern in the middle of the upper street: bigger, its hall is built in _build_tavern
 	var tavern := _build_house(layers, c + TAVERN_OFFSET, 6, HOUSE_COLOURS[2], true, 8, false)
 	tavern["tavern"] = true
 	tavern_rect = tavern["rect"]
@@ -1627,7 +1629,7 @@ func _build_tavern() -> void:
 				tiles.set_cell(c, SOURCE_ID, BACK_WALL if y < 2 else FLOOR)
 	tiles.name = "TavernFloor"
 	add_child(tiles)
-	move_child(tiles, ground.get_index() + 1) # under everyone, Mira included
+	move_child(tiles, ground.get_index() + 1) # under everyone, Isla included
 
 	var solid := StaticBody2D.new()
 	hall.add_child(solid)
@@ -1655,7 +1657,7 @@ func _build_tavern() -> void:
 		sprite.texture = load(piece["texture"])
 		sprite.centered = false
 		sprite.position = to_local(corner + piece["position"])
-		(under if piece.get("under", false) else hall).add_child(sprite) # the bar: in front of Mira
+		(under if piece.get("under", false) else hall).add_child(sprite) # the bar: in front of Isla
 	for r in _hall_solid_rects():
 		walls.append(Rect2(corner + r.position, r.size))
 	for r in walls:
@@ -1673,7 +1675,7 @@ func _build_tavern() -> void:
 		under.add_child(stool) # villagers sit in front of them
 	add_child(hall)
 	if player:
-		move_child(hall, player.get_index()) # under the player, over Mira (she's behind the bar)
+		move_child(hall, player.get_index()) # under the player, over Isla (she's behind the bar)
 
 	# Darkness around the room, under everything so it never covers the map
 	var backdrop := ColorRect.new()
@@ -2073,6 +2075,20 @@ func _setup_world_bounds() -> void:
 		collision.position = r.get_center()
 		walls.add_child(collision)
 	add_child(walls)
+
+
+## New Game: you wake up on the lake shore next to Old Tom, and the intro plays.
+func _start_intro() -> void:
+	SaveGame.intro_requested = false
+	var player := get_node_or_null("Player")
+	var tom := get_node_or_null("Old Tom")
+	if player == null:
+		return
+	if tom:
+		var spot: Vector2i = tom.routine["stops"]["work"]["cell"]
+		player.global_position = cell_to_world(_nearest_free(_grid, spot + Vector2i(-2, 0)))
+		player.set_camera_limits(_world_rect())
+	player._open_menu("res://scripts/story/intro.gd")
 
 
 func _place_player() -> void:

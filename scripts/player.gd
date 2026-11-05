@@ -93,13 +93,17 @@ var hp: int
 var wood := 0
 var crops := {} # crop name -> how many harvested
 var coins := 50
-var seeds := {"carrot": 6} # crop name -> seeds owned
+var seeds := {} # crop name -> seeds owned (Hazel gives you your first ones)
 var dead := false
 var tool := Tool.AXE
 var seed_index := 0 # which of Farm.CROP_TYPES the seeds slot plants
 ## Tools you have. The sword has to be bought from Gus the blacksmith.
-var owned_tools: Array = [Tool.AXE, Tool.HOE, Tool.SEEDS, Tool.WATER, Tool.ROD]
-const TOOL_SOURCES := {Tool.SWORD: "buy one from Gus"} # where to get tools you don't have
+var owned_tools: Array = [Tool.AXE] # the rest you get through the story (or Gus's shop)
+const TOOL_SOURCES := { # where to get tools you don't have
+	Tool.HOE: "Hazel might lend you one", Tool.SEEDS: "Hazel might have some",
+	Tool.WATER: "Hazel might lend you one", Tool.ROD: "Old Tom fishes by the lake",
+	Tool.SWORD: "buy one from Gus",
+}
 
 var _layers: Array[AnimatedSprite2D] = []
 var _facing := 1.0 # 1 = right, -1 = left
@@ -530,6 +534,15 @@ func _talk_to(npc: Node2D) -> void:
 	_open_menu("res://scripts/story/dialogue_box.gd", {"dialogue_key": key})
 
 
+## Big centered text that fades in and out over the game (e.g. "Chapter 1 complete").
+func show_big_message(text: String) -> void:
+	_message.text = text
+	var tween := create_tween()
+	tween.tween_property(_message, "modulate:a", 1.0, 1.0)
+	tween.tween_interval(3.5)
+	tween.tween_property(_message, "modulate:a", 0.0, 1.5)
+
+
 ## Shows a short message above the hotbar (used by the story for quest news).
 func notify(text: String) -> void:
 	_show_toast(text)
@@ -869,6 +882,8 @@ func _build_hud() -> void:
 	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_message.add_theme_font_size_override("font_size", 32)
+	_message.add_theme_color_override("font_outline_color", Color(0.2, 0.12, 0.05))
+	_message.add_theme_constant_override("outline_size", 12) # readable over the map too
 	_message.modulate.a = 0.0
 	hud.add_child(_message)
 

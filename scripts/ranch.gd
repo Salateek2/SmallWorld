@@ -62,6 +62,18 @@ func on_new_day(_day: int) -> void:
 
 
 ## E near the trough or a cow. Returns true if it did something (so tools don't swing).
+## For the "E" prompt: what interact() would do here, {"text", "at"} or {}.
+func interact_target(player: Node2D) -> Dictionary:
+	var at := player.global_position
+	if at.distance_to(trough) < REACH:
+		return {"text": "Feed the animals", "at": trough}
+	for animal in _animals:
+		var node: Node2D = animal["node"]
+		if animal["has_milk"] and at.distance_to(node.global_position) < REACH:
+			return {"text": "Milk", "at": node.global_position}
+	return {}
+
+
 func interact(player: Node2D) -> bool:
 	var at := player.global_position
 	if at.distance_to(trough) < REACH:

@@ -16,8 +16,8 @@ extends Node2D
 @export_tool_button("Generate Map") var generate_action = generate
 @export_tool_button("Clear Map") var clear_action = clear
 
-@export var map_width: int = 150
-@export var map_height: int = 100
+@export var map_width: int = 180
+@export var map_height: int = 124
 ## 0 = a new random map every time. Any other number = the same map every time.
 @export var seed_value: int = 0
 ## Small ponds in the open countryside (the big lake is always there)
@@ -173,6 +173,9 @@ const ROOF := Vector2i(16, 9) # + (0, row) ; row 0 top edge, 3 = shingles, 4 = e
 const POST_RIGHT := Vector2i(17, 9)
 const ROOF_WINDOW := Vector2i(18, 10) # little X attic window in the roof
 const ROOF_CHIMNEY := Vector2i(28, 9) # roof tile with a chimney opening
+# Chimney pipes that stick up over the roof (square, angled, round), one picked per house
+const CHIMNEY_PIPES: Array[Vector2i] = [Vector2i(27, 5), Vector2i(28, 5), Vector2i(29, 5)]
+const CHIMNEY_TOP := -17.0 # where the smoke comes out: pixels above the chimney cell's center
 const CHIMNEY_SMOKE := "res://assets/Sunnyside_World_Assets/Elements/VFX/Chimney Smoke/chimneysmoke_01_strip30.png"
 const SMOKE_FRAME_WIDTH := 15
 ## Village houses with a smoking chimney (your house always has one)
@@ -220,8 +223,52 @@ const CLIFF_SIDE_RIGHT := Vector2i(9, 1)
 # 4 SW, 8 NW); row 16 has pebbles.
 const PATH_SOURCE := 2
 const PATH_SHEET := "res://assets/paths/paths.png"
+# Beaches: sand tiles, with the same wobbly grass edges as the paths (tools/make_sand_tiles.py)
+const SAND_SOURCE := 3
+const SAND_SHEET := "res://assets/paths/sand.png"
+const SAND_TILES: Array[Vector2i] = [Vector2i(43, 7), Vector2i(43, 8)]
+const SHELL_CHANCE := 0.06
+# The island: sea all around (at least this many tiles of it at the map's edge)
+const SEA_MARGIN := 6
+const BEACH_WIDTH := 3 # tiles of sand along the sandy stretches of coast
+# The river: from a spring in the pines down to the sea, between the farm and the village
+const RIVER_X := 0.43 # where it starts, as a fraction of the map width
+const RIVER_WIDTH := 3
+const BRIDGE_PLANK := Vector2i(40, 5) # the dock's planks, laid across the river
+# Waterfalls: where water crosses a cliff (tools/make_waterfall.py, 4 animation frames)
+const WATERFALL_SOURCE := 4
+const WATERFALL_SHEET := "res://assets/water/waterfall.png"
+# The island sketch (assets/map/island_sketch.png): 1 pixel = 2 x 2 tiles. When it exists,
+# the island, its water and its levels come from it instead of being made up at random.
+# Colours (the nearest one counts, so slightly-off colours are fine):
+const SKETCH := "res://assets/map/island_sketch.png"
+const SKETCH_KEY := {
+	"water": Color8(40, 110, 220), # sea, lakes, rivers (their height comes from the land around)
+	"blank": Color8(255, 255, 255), # unpainted = sea
+	"level0": Color8(200, 200, 200), # land at the bottom
+	"level1": Color8(150, 150, 150), # a level up
+	"level2": Color8(100, 100, 100), # higher
+	"level3": Color8(55, 55, 55), # highest
+	"beach": Color8(240, 215, 140), # sand (bottom level)
+	"ladder": Color8(160, 60, 200), # a ladder up the cliff here
+	"ramp": Color8(255, 140, 0), # a walkable path up the cliff (or a slope at its side)
+	"line": Color8(255, 230, 0), # cliff lines people draw to plan: ignored
+}
+const CLOUDS := "res://assets/clouds/clouds.png"
+const CLOUD_SIZE := Vector2i(64, 40)
+const CLOUD_COUNT := 26
+const CLOUD_SPEED := 4.0 # pixels per second, drifting east
 const PEBBLE_CHANCE := 0.14
-const HILL_COUNT := 4 # little hills scattered around the countryside
+const HILL_COUNT := 12 # terraces scattered around the countryside and the pines
+const HILL_SIZE_MIN := Vector2i(10, 7)
+const HILL_SIZE_MAX := Vector2i(24, 13)
+const SECOND_LEVEL_CHANCE := 0.75 # big terraces may get a smaller, higher level on top
+# Small gable cottages (3 x 4) and lookout towers (1 x 5) from the tileset, in every roof
+# colour (+ HOUSE_COLOURS row offset). Not enterable (yet): they dress up the island.
+const COTTAGE := {"origin": Vector2i(32, 10), "size": Vector2i(3, 4)}
+const TOWER := {"origin": Vector2i(30, 9), "size": Vector2i(1, 5)}
+const COTTAGE_COUNT := 8
+const TOWER_COUNT := 3
 
 ## Named places: center as a fraction of the map size, radius in tiles.
 ## The forest is the band along the top of the map instead (see _forest_edge).
@@ -310,9 +357,22 @@ var _changes: Array = [] # trees felled and plants cut this game (saved, replaye
 @export_storage var plateaus: Array[Rect2i] = []
 ## Ramps: the columns of a cliff you can walk through, as rectangles over the cliff face
 @export_storage var ramps: Array[Rect2i] = []
+## Height of every tile (0 = bottom level), row by row: what the cliffs are drawn from
+@export_storage var level_heights := PackedByteArray()
+## Tiles of cliff face with a ladder, and tiles where a path cuts through (or a slope at a side)
+@export_storage var ladder_cells := {}
+@export_storage var ramp_cells := {}
+## Cottages and towers (solid at the bottom when the game starts)
+@export_storage var small_buildings: Array[Rect2i] = []
+## Where roads cross the river on wooden bridges (walkable, not water to swim in)
+@export_storage var bridge_cells: Array[Vector2i] = []
 
 var _rng := RandomNumberGenerator.new()
 var _blocked := {} # cells that already have a path, water or object
+var _island := {} # land cells (everything else is sea), while generating
+var _sand := {} # beach cells, while generating
+var _river := {} # river cells, while generating
+var _from_sketch := false # the island comes from assets/map/island_sketch.png
 var _source: TileSetAtlasSource
 var _roofs: Array[TileMapLayer] = [] # one per house at runtime, faded when you're inside
 var _in_hall := false # player is inside the tavern hall (camera kept there)
@@ -329,7 +389,9 @@ func _ready() -> void:
 	_add_forge_fire()
 	_setup_houses()
 	_setup_cliff_walls()
+	_setup_small_building_walls()
 	_add_water_effects()
+	_spawn_clouds()
 	_spawn_farm()
 	_spawn_ranch()
 	_spawn_clock()
@@ -370,29 +432,48 @@ func generate() -> void:
 	_source = ground.tile_set.get_source(SOURCE_ID) as TileSetAtlasSource
 	_setup_cliff_source(ground.tile_set)
 	_setup_path_source(ground.tile_set)
+	_setup_sheet_source(ground.tile_set, SAND_SOURCE, SAND_SHEET)
 	for layer in [ground, decor]:
 		_setup_collision(layer.tile_set)
 
 	clear()
 	houses.clear()
+	bridge_cells.clear()
+	plateaus.clear()
+	ramps.clear()
+	ladder_cells.clear()
+	ramp_cells.clear()
+	level_heights = PackedByteArray()
+	level_heights.resize(map_width * map_height)
+	_setup_sheet_source(ground.tile_set, WATERFALL_SOURCE, WATERFALL_SHEET, 4)
 	_fill_grass(ground)
+	_from_sketch = _apply_sketch(ground)
+	if not _from_sketch:
+		_make_island(ground)
+		_make_beaches(ground)
+		_make_river(ground)
 	var layers := {"ground": ground, "decor": decor, "canopy": canopy, "roofs": roofs, "shore": shore}
 	_make_home(layers)
 	_make_pen(decor)
-	_make_lake(ground)
-	plateaus.clear()
-	ramps.clear()
+	if not _from_sketch:
+		_make_lake(ground)
 	var plaza := _make_village(layers)
 	_make_roads(ground, decor, plaza)
 	_connect_doors(ground, decor)
-	for i in pond_count:
-		_make_pond(ground)
-	_make_hills(ground, shore)
+	_join_diagonal_paths(ground, decor)
+	if not _from_sketch:
+		for i in pond_count:
+			_make_pond(ground)
+		_make_hills(ground, shore)
+	_draw_levels(ground, shore)
+	_place_small_buildings(layers)
 	_decorate_water(ground, shore, sides)
+	_make_bridges(shore, sides)
 	var dock := _make_dock(ground, shore, decor)
 	_make_lake_fence(ground, shore, decor, dock)
 	_scatter_objects(decor, canopy)
 	_decorate_paths(ground, shore, sides)
+	_decorate_beaches(ground, shore, sides)
 	print("SmallWorld map generated (seed %d)" % _rng.seed)
 
 
@@ -457,6 +538,10 @@ func _fill_grass(ground: TileMapLayer) -> void:
 func _paint_path(ground: TileMapLayer, decor: TileMapLayer, cell: Vector2i) -> void:
 	if cell.x < 0 or cell.y < 0 or cell.x >= map_width or cell.y >= map_height:
 		return
+	if _river.has(cell):
+		if not bridge_cells.has(cell):
+			bridge_cells.append(cell) # a bridge carries the road over the river
+		return
 	if WATER_TILES.has(ground.get_cell_atlas_coords(cell)) or decor.get_cell_source_id(cell) != -1:
 		return # roads stop at water and go around buildings
 	for house in houses:
@@ -465,7 +550,7 @@ func _paint_path(ground: TileMapLayer, decor: TileMapLayer, cell: Vector2i) -> v
 	if pen_rect.has_point(cell):
 		return # or the animal pen
 	if _is_cliff(cell):
-		return # roads don't run up cliff faces (ramps are fine)
+		ramp_cells[cell] = true # a road climbing a level cuts its own way up the cliff
 	ground.set_cell(cell, SOURCE_ID, PATH_TILES[_rng.randi() % PATH_TILES.size()])
 	_blocked[cell] = true
 
@@ -576,6 +661,316 @@ func _place_tiles(layer: TileMapLayer, cell: Vector2i, obj: Dictionary) -> void:
 			_set_tile(layer, cell + Vector2i(ox, oy), obj["origin"] + Vector2i(ox, oy))
 
 
+# --- The island sketch -----------------------------------------------------------
+
+## Builds the island from assets/map/island_sketch.png if there is one: sea, beaches,
+## lakes and rivers, the height of every bit of land, ladders and ramps. Returns false
+## (and changes nothing) without a sketch.
+func _apply_sketch(ground: TileMapLayer) -> bool:
+	if not FileAccess.file_exists(SKETCH):
+		return false
+	var image := Image.load_from_file(ProjectSettings.globalize_path(SKETCH))
+	if image == null:
+		return false
+	var blocks := Vector2i(map_width / 2, map_height / 2)
+	if image.get_size() != blocks:
+		image.resize(blocks.x, blocks.y, Image.INTERPOLATE_NEAREST)
+	var kind := {}
+	for by in blocks.y:
+		for bx in blocks.x:
+			kind[Vector2i(bx, by)] = _sketch_kind(image.get_pixel(bx, by))
+	var level := {"level0": 0, "beach": 0, "level1": 1, "level2": 2, "level3": 3}
+	var height := {}
+	for b in kind:
+		if level.has(kind[b]):
+			height[b] = level[kind[b]]
+	# Ladders, ramps and planning lines take the height of the land under them (the lower side)
+	for b in kind:
+		if kind[b] in ["ladder", "ramp", "line"]:
+			height[b] = 0
+			for d in [Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]:
+				if level.has(kind.get(b + d, "")):
+					height[b] = level[kind[b + d]]
+					break
+	# The sea: water joined to the edge of the picture. Other water (lakes, rivers) is as
+	# high as the land closest to it, so a river can step down the levels in waterfalls.
+	# (Only open water counts: the sea spreads through water with water all around, so a
+	# river flowing into it stays a river, with bridges.)
+	var wet := func(b: Vector2i) -> bool: return kind.get(b, "water") in ["water", "blank"]
+	var open := func(b: Vector2i) -> bool:
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				if not wet.call(b + Vector2i(ox, oy)):
+					return false
+		return true
+	var sea := {}
+	var todo: Array[Vector2i] = []
+	for b in kind:
+		if open.call(b) and (b.x == 0 or b.y == 0 or b.x == blocks.x - 1 or b.y == blocks.y - 1):
+			sea[b] = true
+			todo.append(b)
+	while not todo.is_empty():
+		var b: Vector2i = todo.pop_back()
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if open.call(b + d) and kind.has(b + d) and not sea.has(b + d):
+				sea[b + d] = true
+				todo.append(b + d)
+	for b in sea.keys(): # and the water right along the coast
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				if wet.call(b + Vector2i(ox, oy)) and kind.has(b + Vector2i(ox, oy)):
+					sea[b + Vector2i(ox, oy)] = true
+	var frontier: Array[Vector2i] = []
+	for b in height:
+		frontier.append(b)
+	while not frontier.is_empty():
+		var next: Array[Vector2i] = []
+		for b in frontier:
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var w: Vector2i = b + d
+				if kind.get(w, "") in ["water", "blank"] and not sea.has(w) and not height.has(w):
+					height[w] = height[b]
+					next.append(w)
+		frontier = next
+	# Tiles
+	_island.clear()
+	_sand.clear()
+	_river.clear()
+	for b in kind:
+		for oy in 2:
+			for ox in 2:
+				var cell: Vector2i = b * 2 + Vector2i(ox, oy)
+				_set_height(cell, 0 if sea.has(b) else height.get(b, 0))
+				if sea.has(b):
+					ground.set_cell(cell, SOURCE_ID, WATER_TILES[0])
+					_blocked[cell] = true
+					continue
+				_island[cell] = true
+				if kind[b] in ["water", "blank"]:
+					ground.set_cell(cell, SOURCE_ID, WATER_TILES[0])
+					_river[cell] = true # roads cross it on bridges
+					_blocked[cell] = true
+				elif kind[b] == "beach":
+					ground.set_cell(cell, SOURCE_ID, _pick(SAND_TILES))
+					_sand[cell] = true
+					_blocked[cell] = true
+	# Ladders (1 tile wide) and ramps (2 wide) go on the cliff face next to where they're drawn
+	for b in kind:
+		if not kind[b] in ["ladder", "ramp"]:
+			continue
+		var columns := [b.x * 2] if kind[b] == "ladder" else [b.x * 2, b.x * 2 + 1]
+		var found := false
+		for x in columns:
+			for y in range(b.y * 2 - 2, b.y * 2 + 4):
+				if _is_face(Vector2i(x, y)):
+					var ways: Dictionary = ladder_cells if kind[b] == "ladder" else ramp_cells
+					ways[Vector2i(x, y)] = true
+					found = true
+		if not found and kind[b] == "ramp": # no cliff here: a slope down the side of a level
+			for oy in 2:
+				for ox in 2:
+					ramp_cells[Vector2i(b.x * 2 + ox, b.y * 2 + oy)] = true
+	_block_levels()
+	return true
+
+
+func _sketch_kind(colour: Color) -> String:
+	if colour.a < 0.5:
+		return "blank"
+	var best := ""
+	var best_distance := INF
+	for key in SKETCH_KEY:
+		var c: Color = SKETCH_KEY[key]
+		var distance := Vector3(c.r - colour.r, c.g - colour.g, c.b - colour.b).length_squared()
+		if distance < best_distance:
+			best_distance = distance
+			best = key
+	return best
+
+
+## Writes the current island as a sketch (the template to draw on): run from a tool script.
+func export_sketch(path: String) -> void:
+	var ground := get_node("Ground") as TileMapLayer
+	var image := Image.create(map_width / 2, map_height / 2, false, Image.FORMAT_RGBA8)
+	var names := ["level0", "level1", "level2", "level3"]
+	for by in map_height / 2:
+		for bx in map_width / 2:
+			var cells: Array[Vector2i] = []
+			for oy in 2:
+				for ox in 2:
+					cells.append(Vector2i(bx * 2 + ox, by * 2 + oy))
+			var key: String = names[mini(height_at(cells[3]), 3)]
+			var water := 0
+			var sand := 0
+			for cell in cells:
+				if WATER_TILES.has(ground.get_cell_atlas_coords(cell)) and not bridge_cells.has(cell):
+					water += 1
+				if SAND_TILES.has(ground.get_cell_atlas_coords(cell)):
+					sand += 1
+			if water >= 2:
+				key = "water"
+			elif sand >= 2:
+				key = "beach"
+			for cell in cells:
+				if ladder_cells.has(cell):
+					key = "ladder"
+				elif ramp_cells.has(cell):
+					key = "ramp"
+			image.set_pixel(bx, by, SKETCH_KEY[key])
+	image.save_png(ProjectSettings.globalize_path(path))
+
+
+# --- The island ------------------------------------------------------------------
+
+## Island in the sea: a big rounded middle, every location with some land around it, and
+## the pine forest along the top. Worked out in 2 x 2 blocks so the coast comes out blocky,
+## like the water in the art pack (the shore pieces fit straight edges and steps).
+func _make_island(ground: TileMapLayer) -> void:
+	_island.clear()
+	var phase := _rng.randf() * TAU
+	var middle := Vector2(map_width * 0.5, map_height * 0.47)
+	var reach := Vector2(map_width * 0.4, map_height * 0.37)
+	for by in range(0, map_height, 2):
+		for bx in range(0, map_width, 2):
+			var c := Vector2i(bx, by)
+			var land := false
+			if bx >= SEA_MARGIN and by >= SEA_MARGIN and bx < map_width - SEA_MARGIN - 1 and by < map_height - SEA_MARGIN - 1:
+				var d := (Vector2(c) - middle) / reach
+				var wobble := 1.0 + 0.09 * sin(d.angle() * 3.0 + phase) + 0.05 * sin(d.angle() * 7.0 + phase * 2.0)
+				land = d.length() < wobble
+				for key in LOCATIONS:
+					if _in_ellipse(c, location_center(key), LOCATIONS[key]["radius"] + Vector2(6, 5)):
+						land = true
+				# Land all along the roads between places, so the sea never cuts a road
+				for link in [["farm", "village"], ["farm", "meadow"], ["village", "lake"]]:
+					var from := Vector2(location_center(link[0]))
+					var to := Vector2(location_center(link[1]))
+					var along := clampf((Vector2(c) - from).dot(to - from) / (to - from).length_squared(), 0.0, 1.0)
+					if Vector2(c).distance_to(from.lerp(to, along)) < 8.0:
+						land = true
+				var forest_top := SEA_MARGIN + 3 + 3.0 * sin(bx * 0.11 + phase) + 2.0 * sin(bx * 0.27)
+				if by > forest_top and by < _forest_edge(bx) + 4 and bx > map_width * 0.07 and bx < map_width * 0.93:
+					land = true
+			if land:
+				for oy in 2:
+					for ox in 2:
+						_island[c + Vector2i(ox, oy)] = true
+	for x in map_width:
+		for y in map_height:
+			var cell := Vector2i(x, y)
+			if not _island.has(cell):
+				ground.set_cell(cell, SOURCE_ID, WATER_TILES[0])
+				_blocked[cell] = true
+
+
+## Sandy beaches on some stretches of coast (not in the forest, the farm or the village).
+func _make_beaches(ground: TileMapLayer) -> void:
+	_sand.clear()
+	var phase := _rng.randf() * TAU
+	for cell in _island:
+		if location_at(cell) in ["farm", "village", "forest"] or cell.y < _forest_edge(cell.x) + 3:
+			continue
+		if sin(cell.x * 0.06 + phase) + cos(cell.y * 0.08 + phase * 0.7) < 0.2:
+			continue # these stretches of coast stay grassy (with a cliff drop to the sea)
+		var near_sea := false
+		for oy in range(-BEACH_WIDTH, BEACH_WIDTH + 1):
+			for ox in range(-BEACH_WIDTH, BEACH_WIDTH + 1):
+				if not _island.has(cell + Vector2i(ox, oy)):
+					near_sea = true
+		if near_sea:
+			_sand[cell] = true
+			ground.set_cell(cell, SOURCE_ID, _pick(SAND_TILES))
+			_blocked[cell] = true # (beach decoration comes later)
+
+
+## A river from a spring in the pines down to the sea: 3 tiles wide, running south in
+## straight stretches with a step to one side now and then (blocky, like the lake).
+func _make_river(ground: TileMapLayer) -> void:
+	_river.clear()
+	var x := int(map_width * RIVER_X)
+	var y := int(_forest_edge(x)) - 10
+	var left := int(map_width * 0.4) # stay between the farm and the village
+	var right := int(map_width * 0.48)
+	while y < map_height:
+		var run := _rng.randi_range(5, 9)
+		for i in run:
+			for w in RIVER_WIDTH:
+				var cell := Vector2i(x + w, y)
+				if _island.has(cell):
+					_river[cell] = true
+			y += 1
+		var step := _rng.randi_range(2, 4) * (1 if _rng.randf() < 0.5 else -1)
+		var to := clampi(x + step, left, right)
+		for sx in range(mini(x, to), maxi(x, to) + 1): # the bend: a little sideways stretch
+			for w in RIVER_WIDTH:
+				var cell := Vector2i(sx + w, y)
+				if _island.has(cell):
+					_river[cell] = true
+		x = to
+		if not _island.has(Vector2i(x + 1, y)):
+			break # reached the sea
+	for cell in _river:
+		ground.set_cell(cell, SOURCE_ID, WATER_TILES[0])
+		_blocked[cell] = true
+		_sand.erase(cell)
+
+
+## Wooden bridges where the roads cross the river (planks over the water, edges cleared).
+func _make_bridges(shore: TileMapLayer, sides: TileMapLayer) -> void:
+	for cell in bridge_cells:
+		_set_tile(shore, cell, BRIDGE_PLANK)
+		sides.erase_cell(cell)
+
+
+## Grassy edges where the beach meets the grass (like the paths), and a few shells.
+func _decorate_beaches(ground: TileMapLayer, edges_layer: TileMapLayer, shells_layer: TileMapLayer) -> void:
+	var is_grass := func(c: Vector2i) -> bool:
+		if _sand.has(c):
+			return false
+		var tile := ground.get_cell_atlas_coords(c)
+		return ground.get_cell_source_id(c) == SOURCE_ID and (tile == GRASS or GRASS_VARIANTS.has(tile) or tile == CLIFF_SHADOW)
+	for cell in _sand:
+		if ground.get_cell_source_id(cell) != SOURCE_ID or not SAND_TILES.has(ground.get_cell_atlas_coords(cell)):
+			continue # a road went over it
+		var sides := 0
+		for bit_dir in [[1, Vector2i(0, -1)], [2, Vector2i(1, 0)], [4, Vector2i(0, 1)], [8, Vector2i(-1, 0)]]:
+			if is_grass.call(cell + bit_dir[1]):
+				sides |= bit_dir[0]
+		var corners := 0
+		for bit_dir in [[1, Vector2i(1, -1)], [2, Vector2i(1, 1)], [4, Vector2i(-1, 1)], [8, Vector2i(-1, -1)]]:
+			if is_grass.call(cell + bit_dir[1]):
+				corners |= bit_dir[0]
+		if sides != 0 or corners != 0:
+			edges_layer.set_cell(cell, SAND_SOURCE, Vector2i(sides, corners))
+		elif _rng.randf() < SHELL_CHANCE and shells_layer.get_cell_source_id(cell) == -1:
+			shells_layer.set_cell(cell, SAND_SOURCE, Vector2i(_rng.randi() % 4, 16))
+
+
+## Adds a tile sheet to the TileSet (once) as `source_id`, with every 16 x 16 tile in it.
+## frames > 1: each row is one animated tile, its frames side by side.
+func _setup_sheet_source(tile_set: TileSet, source_id: int, sheet: String, frames := 1) -> void:
+	var source: TileSetAtlasSource
+	if tile_set.has_source(source_id):
+		source = tile_set.get_source(source_id)
+	else:
+		source = TileSetAtlasSource.new()
+		source.texture = load(sheet)
+		source.texture_region_size = Vector2i(16, 16)
+		tile_set.add_source(source, source_id)
+	if frames > 1:
+		for y in source.texture.get_height() / 16:
+			var tile := Vector2i(0, y)
+			if not source.has_tile(tile):
+				source.create_tile(tile)
+			source.set_tile_animation_frames_count(tile, frames)
+			source.set_tile_animation_speed(tile, 8.0)
+		return
+	for x in source.texture.get_width() / 16:
+		for y in source.texture.get_height() / 16:
+			if not source.has_tile(Vector2i(x, y)):
+				source.create_tile(Vector2i(x, y))
+
+
 func _make_lake(ground: TileMapLayer) -> void:
 	# Blocky, like the ponds in the art pack: a wide middle and two lobes, all rectangles
 	var c := location_center("lake")
@@ -666,26 +1061,108 @@ func _make_smithy(layers: Dictionary, house_corner: Vector2i) -> void:
 	_set_tile(decor, yard.position + Vector2i(6, 3), BARREL_WATER)
 
 
-# --- Levels: plateaus, cliffs and ramps ----------------------------------------
+# --- Levels: heights, cliffs, ladders, ramps and waterfalls -----------------------
 
-## True if the tile is on raised ground.
+## How many levels up a tile is: 0 at the bottom, then 1, 2, 3.
+func height_at(cell: Vector2i) -> int:
+	if level_heights.is_empty() or cell.x < 0 or cell.y < 0 or cell.x >= map_width or cell.y >= map_height:
+		return 0
+	return level_heights[cell.y * map_width + cell.x]
+
+
+func _set_height(cell: Vector2i, h: int) -> void:
+	if cell.x >= 0 and cell.y >= 0 and cell.x < map_width and cell.y < map_height:
+		level_heights[cell.y * map_width + cell.x] = h
+
+
 func is_high(cell: Vector2i) -> bool:
-	for rect in plateaus:
-		if rect.has_point(cell):
-			return true
-	return false
+	return height_at(cell) > 0
 
 
-## True for the two cliff rows below a plateau's front edge (not counting ramps).
+## The two rows below the front of a higher level: rock (or a waterfall).
+func _is_face(cell: Vector2i) -> bool:
+	var h := height_at(cell)
+	var up1 := height_at(cell + Vector2i(0, -1))
+	return up1 > h or (height_at(cell + Vector2i(0, -2)) > h and up1 == h)
+
+
+## A cliff face you can't get through (ladders and ramps cut through it).
 func _is_cliff(cell: Vector2i) -> bool:
-	if is_high(cell):
-		return false
-	if not (is_high(cell + Vector2i(0, -1)) or (is_high(cell + Vector2i(0, -2)) and not is_high(cell + Vector2i(0, -1)))):
-		return false
-	for ramp in ramps:
-		if ramp.has_point(cell):
-			return false
-	return true
+	return _is_face(cell) and not ladder_cells.has(cell) and not ramp_cells.has(cell)
+
+
+## Draws every level from the heights: grass-and-rock edges around the top of each higher
+## area, the 2-row rock face below its front (ladders, path cuts, waterfalls where water
+## falls over it) and a shadow at the foot.
+func _draw_levels(ground: TileMapLayer, overlay: TileMapLayer) -> void:
+	var is_water := func(c: Vector2i) -> bool:
+		return ground.get_cell_source_id(c) == SOURCE_ID and WATER_TILES.has(ground.get_cell_atlas_coords(c))
+	var falls := func(c: Vector2i) -> bool: # water pouring over the cliff here
+		var row := 0 if height_at(c + Vector2i(0, -1)) > height_at(c) else 1
+		return is_water.call(c) and is_water.call(c + Vector2i(0, -1 - row))
+	var rock := func(c: Vector2i) -> bool: # a face tile that is rock (for the rounded ends)
+		return _is_face(c) and not ramp_cells.has(c) and not falls.call(c)
+	for y in map_height:
+		for x in map_width:
+			var cell := Vector2i(x, y)
+			var h := height_at(cell)
+			if _is_face(cell):
+				var row := 0 if height_at(cell + Vector2i(0, -1)) > h else 1
+				if ramp_cells.has(cell):
+					ground.set_cell(cell, SOURCE_ID, PATH_TILES[0]) # a path cut through the cliff
+				elif is_water.call(cell) and is_water.call(cell + Vector2i(0, -1 - row)):
+					overlay.set_cell(cell, WATERFALL_SOURCE, Vector2i(0, row)) # water above too: it falls
+				else:
+					if not is_water.call(cell):
+						_set_tile(ground, cell, GRASS) # under the rock (its rounded corners show it)
+					var column := x % CLIFF_VARIANTS
+					if ladder_cells.has(cell):
+						column = CLIFF_LADDER
+					elif not rock.call(cell + Vector2i(-1, 0)):
+						column = CLIFF_LEFT_END # also frames the right side of a path cut
+					elif not rock.call(cell + Vector2i(1, 0)):
+						column = CLIFF_RIGHT_END
+					overlay.set_cell(cell, CLIFF_SOURCE, Vector2i(column, row))
+				_blocked[cell] = true
+				continue
+			if is_water.call(cell):
+				continue
+			var above := cell + Vector2i(0, -1)
+			if _is_face(above) and not ramp_cells.has(above) and not ladder_cells.has(above) and not is_water.call(above):
+				_set_tile(ground, cell, CLIFF_SHADOW)
+				_blocked[cell] = true
+			if h == 0:
+				continue
+			# Edge pieces on higher ground: outlined back, rock strip down each side
+			# (the front gets the cliff face's grass lip instead)
+			var up_low := height_at(above) < h
+			var left_low := height_at(cell + Vector2i(-1, 0)) < h and not ramp_cells.has(cell + Vector2i(-1, 0))
+			var right_low := height_at(cell + Vector2i(1, 0)) < h and not ramp_cells.has(cell + Vector2i(1, 0))
+			if ramp_cells.has(cell):
+				left_low = false # a slope down the side
+				right_low = false
+			var piece := Vector2i(-1, -1)
+			if up_low:
+				piece = CLIFF_BACK_LEFT if left_low else (CLIFF_BACK_RIGHT if right_low else CLIFF_BACK)
+			elif left_low:
+				piece = CLIFF_SIDE_LEFT
+			elif right_low:
+				piece = CLIFF_SIDE_RIGHT
+			if piece.x >= 0:
+				_set_tile(ground, cell, GRASS)
+				overlay.set_cell(cell, CLIFF_SOURCE, piece)
+				_blocked[cell] = true
+
+
+## Keeps roads, houses and trees off cliff faces, edges and shadows (before they're drawn).
+func _block_levels() -> void:
+	for y in map_height:
+		for x in map_width:
+			var cell := Vector2i(x, y)
+			var h := height_at(cell)
+			if _is_face(cell) or _is_face(cell + Vector2i(0, -1)) or (h > 0 and (height_at(cell + Vector2i(0, -1)) < h \
+					or height_at(cell + Vector2i(-1, 0)) < h or height_at(cell + Vector2i(1, 0)) < h)):
+				_blocked[cell] = true
 
 
 ## Raises a rectangle of ground and draws its edges, cliff face and ramps on the Ground layer.
@@ -750,88 +1227,121 @@ func _decorate_paths(ground: TileMapLayer, edges_layer: TileMapLayer, pebbles_la
 			pebbles_layer.set_cell(cell, PATH_SOURCE, Vector2i(_rng.randi() % 4, 16))
 
 
-## Raises a rectangle of ground and draws its edges, rocky cliff face and ways up.
-## A ramp 1 tile wide is a ladder; wider ramps are a dirt path cut through the cliff.
-func _add_plateau(ground: TileMapLayer, overlay: TileMapLayer, rect: Rect2i, plateau_ramps: Array) -> void:
+## Raises a rectangle of ground one level (from a sketch: sets it to level 1, with the bottom
+## level in front for its cliff). A ramp 1 tile wide is a ladder; wider ones are a path cut
+## through the cliff. Drawn later by _draw_levels.
+func _add_plateau(_ground: TileMapLayer, _overlay: TileMapLayer, rect: Rect2i, plateau_ramps: Array) -> void:
 	plateaus.append(rect)
+	for x in range(rect.position.x, rect.end.x):
+		for y in range(rect.position.y, rect.end.y):
+			var cell := Vector2i(x, y)
+			_set_height(cell, 1 if _from_sketch else height_at(cell) + 1)
+		if _from_sketch:
+			for y in range(rect.end.y, rect.end.y + 3):
+				_set_height(Vector2i(x, y), 0)
 	for ramp in plateau_ramps:
 		ramps.append(ramp)
-	var ramp_at := func(x: int) -> Rect2i:
-		for ramp in plateau_ramps:
-			if x >= ramp.position.x and x < ramp.end.x:
-				return ramp
-		return Rect2i()
-	for x in range(rect.position.x - 1, rect.end.x + 1):
-		for y in range(rect.position.y - 1, rect.end.y + 3):
-			var cell := Vector2i(x, y)
-			if rect.has_point(cell):
-				# One edge piece per direction: outlined back, rock strip down each side
-				# (the front gets the cliff face's grass lip instead)
-				var piece := Vector2i(-1, -1)
-				var left := x == rect.position.x
-				var right := x == rect.end.x - 1
-				if y == rect.position.y:
-					piece = CLIFF_BACK_LEFT if left else (CLIFF_BACK_RIGHT if right else CLIFF_BACK)
-				elif left:
-					piece = CLIFF_SIDE_LEFT
-				elif right:
-					piece = CLIFF_SIDE_RIGHT
-				if piece.x >= 0:
-					_set_tile(ground, cell, GRASS)
-					overlay.set_cell(cell, CLIFF_SOURCE, piece)
-					_blocked[cell] = true
+		for x in range(ramp.position.x, ramp.end.x):
+			for y in range(ramp.position.y, ramp.end.y):
+				var ways: Dictionary = ladder_cells if ramp.size.x == 1 else ramp_cells
+				ways[Vector2i(x, y)] = true
+	# Keep everything else off its edges, its cliff and the cliff's shadow
+	for x in range(rect.position.x, rect.end.x):
+		for y in range(rect.position.y, rect.end.y + 3):
+			if y == rect.position.y or x == rect.position.x or x == rect.end.x - 1 or y >= rect.end.y:
+				_blocked[Vector2i(x, y)] = true
+
+
+## Cottages and lookout towers around the island, on free ground (and some in the village).
+func _place_small_buildings(layers: Dictionary) -> void:
+	small_buildings.clear()
+	var wanted := [[COTTAGE, COTTAGE_COUNT], [TOWER, TOWER_COUNT]]
+	for entry in wanted:
+		var obj: Dictionary = entry[0]
+		var made := 0
+		for attempt in 800:
+			if made >= entry[1]:
+				break
+			var size: Vector2i = obj["size"]
+			var corner := Vector2i(_rng.randi_range(SEA_MARGIN, map_width - size.x - SEA_MARGIN),
+				_rng.randi_range(SEA_MARGIN, map_height - size.y - SEA_MARGIN))
+			var ok := true
+			for x in range(corner.x - 2, corner.x + size.x + 2):
+				for y in range(corner.y - 1, corner.y + size.y + 2):
+					var cell := Vector2i(x, y)
+					if _blocked.has(cell) or not _island.has(cell) or height_at(cell) != height_at(corner) \
+							or location_at(cell) in ["farm", "lake"]:
+						ok = false
+			if not ok:
 				continue
-			if x < rect.position.x or x >= rect.end.x or y < rect.end.y:
-				continue
-			# Below the front edge: two rows of cliff (or a way up), then a shadow row
-			var row := y - rect.end.y
-			var ramp: Rect2i = ramp_at.call(x)
-			if row < 2:
-				_set_tile(ground, cell, GRASS) # under the rock (its rounded corners show it)
-				var column := x % CLIFF_VARIANTS
-				if ramp.size.x == 1:
-					column = CLIFF_LADDER
-				elif ramp.size.x > 1:
-					ground.set_cell(cell, SOURCE_ID, PATH_TILES[0]) # a path cut through the cliff
-					column = -1
-				elif x == rect.position.x or ramp_at.call(x - 1).size.x > 1:
-					column = CLIFF_LEFT_END # also frames the right side of a path cut
-				elif x == rect.end.x - 1 or ramp_at.call(x + 1).size.x > 1:
-					column = CLIFF_RIGHT_END
-				if column >= 0:
-					overlay.set_cell(cell, CLIFF_SOURCE, Vector2i(column, row))
-			elif ramp.size.x == 0:
-				_set_tile(ground, cell, CLIFF_SHADOW)
+			_build_small(layers, corner, obj, HOUSE_COLOURS[_rng.randi() % HOUSE_COLOURS.size()])
+			made += 1
+
+
+## One cottage or tower: the bottom row (walls, door) on Decor, the roof on the Canopy.
+func _build_small(layers: Dictionary, corner: Vector2i, obj: Dictionary, colour: int) -> void:
+	var size: Vector2i = obj["size"]
+	for x in size.x:
+		for y in size.y:
+			var cell := corner + Vector2i(x, y)
+			var tile: Vector2i = obj["origin"] + Vector2i(x, y + colour)
+			_set_tile(layers["decor"] if y == size.y - 1 else layers["canopy"], cell, tile)
 			_blocked[cell] = true
+	small_buildings.append(Rect2i(corner, size))
 
 
 ## A few hills in the open countryside, each with a ladder up its front.
 func _make_hills(ground: TileMapLayer, overlay: TileMapLayer) -> void:
 	var made := 0
-	for attempt in 200:
+	for attempt in 600:
 		if made >= HILL_COUNT:
 			return
-		var size := Vector2i(_rng.randi_range(8, 14), _rng.randi_range(5, 8))
+		var size := Vector2i(_rng.randi_range(HILL_SIZE_MIN.x, HILL_SIZE_MAX.x), _rng.randi_range(HILL_SIZE_MIN.y, HILL_SIZE_MAX.y))
 		var corner := Vector2i(
-			_rng.randi_range(BORDER + 2, map_width - size.x - BORDER - 2),
-			_rng.randi_range(BORDER + 2, map_height - size.y - BORDER - 5))
+			_rng.randi_range(SEA_MARGIN + 2, map_width - size.x - SEA_MARGIN - 2),
+			_rng.randi_range(SEA_MARGIN + 2, map_height - size.y - SEA_MARGIN - 5))
 		var ok := true
 		for x in range(corner.x - 2, corner.x + size.x + 2):
 			for y in range(corner.y - 2, corner.y + size.y + 4):
 				var cell := Vector2i(x, y)
-				if _blocked.has(cell) or location_at(cell) != "":
-					ok = false # only on free countryside, away from roads, water and buildings
+				if _blocked.has(cell) or not (location_at(cell) in ["", "forest"]):
+					ok = false # only on free countryside or in the pines, away from roads and water
 		if not ok:
 			continue
 		var ladder_x := corner.x + _rng.randi_range(1, size.x - 2)
 		_add_plateau(ground, overlay, Rect2i(corner, size), [Rect2i(ladder_x, corner.y + size.y, 1, 2)])
+		# A smaller level on top: inset from the sides, and far enough back that its cliff,
+		# shadow and ladder all sit on the terrace
+		if size.x >= 14 and size.y >= 9 and _rng.randf() < SECOND_LEVEL_CHANCE:
+			var top := Rect2i(corner + Vector2i(_rng.randi_range(2, 4), 1),
+				Vector2i(_rng.randi_range(6, size.x - 6), _rng.randi_range(3, size.y - 6)))
+			var top_ladder := top.position.x + _rng.randi_range(1, top.size.x - 2)
+			if absi(top_ladder - ladder_x) > 1:
+				_add_plateau(ground, overlay, top, [Rect2i(top_ladder, top.end.y, 1, 2)])
 		made += 1
 
 
-## Invisible walls along every cliff: around a plateau's top edges and over its cliff face,
-## with gaps at the ramps. Built when the game starts.
+## Cottages and towers are solid at the bottom (front wall and lower roof); you can walk
+## behind their upper roof.
+func _setup_small_building_walls() -> void:
+	var walls := StaticBody2D.new()
+	walls.name = "SmallBuildingWalls"
+	add_child(walls)
+	for rect in small_buildings:
+		var top_left := cell_to_world(rect.position + Vector2i(0, rect.size.y - 2)) - Vector2(8, 8)
+		var shape := RectangleShape2D.new()
+		shape.size = Vector2(rect.size.x * 16 - 4, 28)
+		var collision := CollisionShape2D.new()
+		collision.shape = shape
+		collision.position = top_left + Vector2(rect.size.x * 8, 16)
+		walls.add_child(collision)
+
+
+## Invisible walls along every cliff: over the rock faces (and waterfalls) except where a
+## ladder or path goes through, and thin ones along the top and sides of every higher area.
+## Built when the game starts, from the heights.
 func _setup_cliff_walls() -> void:
-	if plateaus.is_empty():
+	if level_heights.is_empty():
 		return
 	var walls := StaticBody2D.new()
 	walls.name = "CliffWalls"
@@ -843,16 +1353,31 @@ func _setup_cliff_walls() -> void:
 		collision.shape = shape
 		collision.position = r.get_center()
 		walls.add_child(collision)
-	for rect in plateaus:
-		var top_left := cell_to_world(rect.position) - Vector2(8, 8)
-		var size := Vector2(rect.size * 16)
-		add_wall.call(Rect2(top_left, Vector2(size.x, 3))) # back edge
-		add_wall.call(Rect2(top_left, Vector2(3, size.y))) # left edge
-		add_wall.call(Rect2(top_left + Vector2(size.x - 3, 0), Vector2(3, size.y))) # right edge
-		# The cliff face below the front edge, except where a ramp goes through
-		for x in range(rect.position.x, rect.end.x):
-			if _is_cliff(Vector2i(x, rect.end.y)):
-				add_wall.call(Rect2(cell_to_world(Vector2i(x, rect.end.y)) - Vector2(8, 8), Vector2(16, 30)))
+	for y in map_height:
+		var face_from := -1 # runs of cliff face become one wall
+		var back_from := -1 # runs of back edge too
+		for x in map_width + 1:
+			var cell := Vector2i(x, y)
+			var h := height_at(cell)
+			var face := x < map_width and _is_cliff(cell)
+			var back := x < map_width and h > 0 and height_at(cell + Vector2i(0, -1)) < h and not _is_face(cell)
+			if face and face_from < 0:
+				face_from = x
+			elif not face and face_from >= 0:
+				add_wall.call(Rect2(cell_to_world(Vector2i(face_from, y)) - Vector2(8, 8), Vector2((x - face_from) * 16, 16)))
+				face_from = -1
+			if back and back_from < 0:
+				back_from = x
+			elif not back and back_from >= 0:
+				add_wall.call(Rect2(cell_to_world(Vector2i(back_from, y)) - Vector2(8, 8), Vector2((x - back_from) * 16, 3)))
+				back_from = -1
+			if x >= map_width or h == 0 or ramp_cells.has(cell):
+				continue
+			var top_left := cell_to_world(cell) - Vector2(8, 8)
+			if height_at(cell + Vector2i(-1, 0)) < h and not ramp_cells.has(cell + Vector2i(-1, 0)):
+				add_wall.call(Rect2(top_left, Vector2(3, 16)))
+			if height_at(cell + Vector2i(1, 0)) < h and not ramp_cells.has(cell + Vector2i(1, 0)):
+				add_wall.call(Rect2(top_left + Vector2(13, 0), Vector2(3, 16)))
 
 
 func _make_roads(ground: TileMapLayer, decor: TileMapLayer, plaza: Vector2i) -> void:
@@ -865,6 +1390,22 @@ func _make_roads(ground: TileMapLayer, decor: TileMapLayer, plaza: Vector2i) -> 
 	_carve_road(ground, decor, plaza + Vector2i(6, 1), plaza + Vector2i(24, 1)) # east, past the upper village
 	_carve_road(ground, decor, plaza + Vector2i(24, 1), north) # village -> forest
 	_carve_road(ground, decor, home + Vector2i(0, 2), location_center("meadow")) # farm -> meadow
+
+
+## Where a road squeezed past a corner (a house, a pond) two path tiles may only touch
+## diagonally, and nobody can walk between them: pave one of the two corner tiles.
+func _join_diagonal_paths(ground: TileMapLayer, decor: TileMapLayer) -> void:
+	var is_path := func(c: Vector2i) -> bool: return PATH_TILES.has(ground.get_cell_atlas_coords(c)) or bridge_cells.has(c)
+	for cell in ground.get_used_cells():
+		if not is_path.call(cell):
+			continue
+		for d in [Vector2i(1, 1), Vector2i(1, -1)]:
+			var side_a: Vector2i = cell + Vector2i(d.x, 0)
+			var side_b: Vector2i = cell + Vector2i(0, d.y)
+			if is_path.call(cell + d) and not is_path.call(side_a) and not is_path.call(side_b):
+				_paint_path(ground, decor, side_a)
+				if not is_path.call(side_a):
+					_paint_path(ground, decor, side_b)
 
 
 ## A footpath from every front door to the nearest road or plaza below it:
@@ -948,9 +1489,12 @@ func _decorate_water(ground: TileMapLayer, shore: TileMapLayer, sides: TileMapLa
 	for y in map_height:
 		for x in map_width:
 			var cell := Vector2i(x, y)
+			if is_water.call(cell) and _is_face(cell):
+				continue # a waterfall
 			if not is_water.call(cell):
 				# Land right above the water: the brown earth face of the drop
-				if is_water.call(cell + Vector2i(0, 1)):
+				if is_water.call(cell + Vector2i(0, 1)) and not _sand.has(cell) and not _is_face(cell + Vector2i(0, 1)) \
+						and not _is_face(cell):
 					_set_tile(shore, cell, EARTH_FACE)
 					_blocked[cell] = true
 				continue
@@ -1110,12 +1654,6 @@ func _scatter_objects(decor: TileMapLayer, canopy: TileMapLayer) -> void:
 			if _blocked.has(cell):
 				continue
 			var roll := _rng.randf()
-			var edge := mini(mini(x, y), mini(map_width - 1 - x, map_height - 1 - y))
-			if edge < BORDER:
-				# Thick tree line along the map edge
-				if roll < 0.6:
-					_try_place_big(decor, canopy, cell, BIG_OBJECTS[_pick(PINES)], 0)
-				continue
 			match location_at(cell):
 				"farm", "village":
 					if roll < 0.01:
@@ -1432,7 +1970,31 @@ func _setup_houses() -> void:
 			collision.shape = shape
 			collision.position = r.get_center()
 			walls.add_child(collision)
+	_add_chimney_pipes()
 	_add_chimney_smoke(shared)
+
+
+## A chimney pipe on every house that has a chimney: it stands on the roof's top edge and
+## sticks up over it (the smoke comes out of its top). It belongs to the house's roof, so
+## it fades away with the roof when you walk in.
+func _add_chimney_pipes() -> void:
+	var source := (get_node("Ground") as TileMapLayer).tile_set.get_source(SOURCE_ID) as TileSetAtlasSource
+	for i in houses.size():
+		if not houses[i].has("chimney") or i >= _roofs.size():
+			continue
+		var roof := _roofs[i]
+		var cell: Vector2i = houses[i]["chimney"]
+		var shingles := roof.get_cell_atlas_coords(cell + Vector2i(-1, 0))
+		if shingles != Vector2i(-1, -1):
+			roof.set_cell(cell, SOURCE_ID, shingles) # plain roof under the pipe, not the old vent
+		var pipe := Sprite2D.new()
+		var atlas := AtlasTexture.new()
+		atlas.atlas = source.texture
+		var kind: Vector2i = CHIMNEY_PIPES[absi(cell.x * 7 + cell.y * 3) % CHIMNEY_PIPES.size()]
+		atlas.region = Rect2(Vector2(kind * 16), Vector2(16, 16))
+		pipe.texture = atlas
+		pipe.position = roof.map_to_local(cell + Vector2i(0, -1)) + Vector2(0, 4) # set into the roof's top edge
+		roof.add_child(pipe)
 
 
 ## Animated smoke rising from every house that has a chimney.
@@ -1446,7 +2008,7 @@ func _add_chimney_smoke(roofs: TileMapLayer) -> void:
 		atlas.region = Rect2(i * SMOKE_FRAME_WIDTH, 0, SMOKE_FRAME_WIDTH, strip.get_height())
 		frames.add_frame("default", atlas)
 	# [tile, where its opening is relative to the tile's center]
-	var chimneys: Array = houses.filter(func(h): return h.has("chimney")).map(func(h): return [h["chimney"], Vector2(1, 2)])
+	var chimneys: Array = houses.filter(func(h): return h.has("chimney")).map(func(h): return [h["chimney"], Vector2(0, CHIMNEY_TOP)])
 	if forge_cell.x >= 0:
 		chimneys.append([forge_cell + Vector2i(1, -1), Vector2(-2, -4)]) # the forge's stone chimney
 	for chimney in chimneys:
@@ -1494,7 +2056,8 @@ func cell_to_world(cell: Vector2i) -> Vector2:
 func is_water(world_pos: Vector2) -> bool:
 	var ground := get_node("Ground") as TileMapLayer
 	var cell := ground.local_to_map(ground.to_local(world_pos))
-	return WATER_TILES.has(ground.get_cell_atlas_coords(cell)) and not dock_cells.has_point(cell)
+	return WATER_TILES.has(ground.get_cell_atlas_coords(cell)) and not dock_cells.has_point(cell) \
+		and not bridge_cells.has(cell)
 
 
 ## True if world_pos is next to the bed in your home (where you can sleep).
@@ -1845,6 +2408,22 @@ func _build_walk_grids() -> void:
 		for y in map_height:
 			var cell := Vector2i(x, y)
 			_grid.set_point_solid(cell, not _villager_can_walk(ground, decor, cell, doors))
+	# Bits of path you can't reach from the village (a dead-end scrap of road) don't count:
+	# that way a villager's spot is always somewhere they can actually walk to
+	var reached := {}
+	var todo: Array[Vector2i] = [_nearest_free(_grid, location_center("village"))]
+	reached[todo[0]] = true
+	while not todo.is_empty():
+		var cell: Vector2i = todo.pop_back()
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var next: Vector2i = cell + d
+			if _grid.region.has_point(next) and not _grid.is_point_solid(next) and not reached.has(next):
+				reached[next] = true
+				todo.append(next)
+	for x in map_width:
+		for y in map_height:
+			if not reached.has(Vector2i(x, y)):
+				_grid.set_point_solid(Vector2i(x, y), true)
 
 	var hall := hall_rect()
 	_hall_grid = AStarGrid2D.new()
@@ -1861,6 +2440,8 @@ func _build_walk_grids() -> void:
 
 
 func _villager_can_walk(ground: TileMapLayer, decor: TileMapLayer, cell: Vector2i, doors: Dictionary) -> bool:
+	if bridge_cells.has(cell):
+		return true
 	if ground.get_cell_source_id(cell) != SOURCE_ID:
 		return false
 	var tile := ground.get_cell_atlas_coords(cell)
@@ -1936,6 +2517,43 @@ func _update_camera_area(player: Node2D) -> void:
 		player.set_camera_limits(Rect2(top_left, Vector2(HALL_SIZE * 16)).grow(HALL_MARGIN))
 	else:
 		player.set_camera_limits(_world_rect())
+
+
+## Clouds drifting slowly over the sea around the island (drawn above everything).
+func _spawn_clouds() -> void:
+	var ground := get_node("Ground") as TileMapLayer
+	var sheet: Texture2D = load(CLOUDS)
+	var sky := Node2D.new()
+	sky.name = "Clouds"
+	sky.z_index = 50
+	sky.set_script(load("res://scripts/clouds.gd"))
+	sky.set("speed", CLOUD_SPEED)
+	sky.set("area", _world_rect())
+	add_child(sky)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var placed := 0
+	for attempt in 600:
+		if placed >= CLOUD_COUNT:
+			break
+		var cell := Vector2i(rng.randi_range(0, map_width - 1), rng.randi_range(0, map_height - 1))
+		var open_sea := true # keep them off the island, so they frame it instead of hiding it
+		for oy in range(-3, 4):
+			for ox in range(-4, 5):
+				if not WATER_TILES.has(ground.get_cell_atlas_coords(cell + Vector2i(ox, oy))) \
+						and ground.get_cell_source_id(cell + Vector2i(ox, oy)) != -1:
+					open_sea = false
+		if not open_sea or location_at(cell) == "lake":
+			continue
+		var cloud := Sprite2D.new()
+		var atlas := AtlasTexture.new()
+		atlas.atlas = sheet
+		atlas.region = Rect2(Vector2(rng.randi() % (sheet.get_width() / CLOUD_SIZE.x) * CLOUD_SIZE.x, 0), Vector2(CLOUD_SIZE))
+		cloud.texture = atlas
+		cloud.flip_h = rng.randf() < 0.5
+		cloud.position = to_local(cell_to_world(cell))
+		sky.add_child(cloud)
+		placed += 1
 
 
 ## The smithy's forge: flickering fire in the furnace (its smoke comes from _add_chimney_smoke).

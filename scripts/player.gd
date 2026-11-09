@@ -8,6 +8,9 @@ extends CharacterBody2D
 ## Fishing: face water, press E to cast, wait for the "!" and press E quickly to reel in.
 ## Tools always work on the tile in front of the character (left or right, the way it faces).
 ## Mouse wheel or +/- zooms the camera in and out.
+## Keep walking and you break into a run by yourself (Shift runs straight away).
+## A little "E" prompt pops up over whatever E would use (someone to talk to, a seat...),
+## and one-time tips (tips.gd) explain the controls as you need them.
 ## E at the market counter opens the shop; E next to your bed sleeps until morning.
 ## I or Tab opens the inventory. E next to a villager talks to them. Esc pauses.
 ## Walk into water to swim (no tools while swimming).
@@ -125,6 +128,11 @@ var _fade: ColorRect # black screen for sleeping
 var _message: Label # big centered text ("Day 2", "You passed out...")
 var _in_menu := false # shop open or sleeping: no moving or tools
 var _sitting := false # on a stool or the sofa (E or a move key gets up)
+const RUN_AFTER := 0.6 # seconds of walking before you start running by yourself
+var _walk_time := 0.0 # how long you've been walking without stopping
+var _run_blend := 0.0 # 0 = walking speed, 1 = running speed (eases between them)
+var _prompt: PanelContainer # "E  Talk" over what E would use
+var _prompt_label: Label
 var _fishing := Fishing.NONE
 var _swimming := false # in the water (not on the dock)
 @export var swim_speed: float = 40.0
@@ -168,6 +176,7 @@ func _physics_process(delta: float) -> void:
 	if _in_menu:
 		velocity = Vector2.ZERO
 		_play("sit" if _sitting else "idle") # e.g. chatting from a stool
+		_prompt.visible = false
 		return
 
 	if Input.is_action_just_pressed("inventory") and not _busy and _fishing == Fishing.NONE:
@@ -180,6 +189,7 @@ func _physics_process(delta: float) -> void:
 	_handle_tool_keys()
 	_update_aim_highlight()
 	_check_location()
+	_update_prompt()
 
 	if _fishing != Fishing.NONE:
 		velocity = Vector2.ZERO
@@ -223,8 +233,10 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var direction := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	var running := Input.is_action_pressed("run") and not _swimming
-	var speed := swim_speed if _swimming else (run_speed if running else walk_speed)
+	_walk_time = _walk_time + delta if direction != Vector2.ZERO else 0.0
+	var running := (Input.is_action_pressed("run") or _walk_time > RUN_AFTER) and not _swimming
+	_run_blend = move_toward(_run_blend, 1.0 if running else 0.0, delta * 3.0) # speed up smoothly
+	var speed := swim_speed if _swimming else lerpf(walk_speed, run_speed, _run_blend)
 	velocity = direction * speed
 	move_and_slide()
 
@@ -235,7 +247,65 @@ func _physics_process(delta: float) -> void:
 	elif direction == Vector2.ZERO:
 		_play("idle")
 	else:
-		_play("run" if running else "walk")
+		_play("run" if _run_blend > 0.5 else "walk")
+
+
+# --- The "E" prompt --------------------------------------------------------------
+
+## What pressing E would do right now: {"text", "at" (world position)}, or {} for nothing
+## special (then E just uses the tool in your hand). Checks things in the same order as E.
+func use_target() -> Dictionary:
+	var world := get_parent()
+	if _busy or _fishing != Fishing.NONE or _swimming:
+		return {}
+	if _sitting:
+		var npc := _npc_in_reach()
+		if npc:
+			return {"text": "Talk", "at": npc.global_position}
+		return {"text": "Stand up", "at": global_position}
+	if world.has_method("is_near_market") and world.is_near_market(global_position):
+		return {"text": "Shop", "at": world.cell_to_world(world.market_cell + Vector2i(2, -1))}
+	if world.has_method("seat_near"):
+		var seat: Dictionary = world.seat_near(global_position)
+		if not seat.is_empty():
+			return {"text": "Sit", "at": seat["position"]}
+	var npc := _npc_in_reach()
+	if npc:
+		return {"text": "Shop" if npc.shop != "" else "Talk", "at": npc.global_position}
+	if world.has_method("is_near_bed") and world.is_near_bed(global_position):
+		return {"text": "Sleep", "at": global_position}
+	if world.has_node("Ranch"):
+		var ranch_target: Dictionary = world.get_node("Ranch").interact_target(self)
+		if not ranch_target.is_empty():
+			return ranch_target
+	var farm := _farm()
+	if owned_tools.has(tool) and tool != Tool.SWORD and tool != Tool.ROD and farm and farm.is_ripe(_aim_point()):
+		return {"text": "Harvest", "at": _aim_point()}
+	return {}
+
+
+func _update_prompt() -> void:
+	var target := use_target()
+	_prompt.visible = not target.is_empty()
+	if target.is_empty():
+		return
+	_prompt_label.text = "E  " + target["text"]
+	# Over the thing, in screen pixels (about a head's height above it)
+	var screen: Vector2 = get_viewport().get_canvas_transform() * (target["at"] as Vector2 + Vector2(0, -32))
+	_prompt.reset_size()
+	_prompt.position = (screen - Vector2(_prompt.size.x / 2.0, _prompt.size.y)).round()
+
+
+func _build_prompt(hud: CanvasLayer) -> void:
+	_prompt = PanelContainer.new()
+	_prompt.add_theme_stylebox_override("panel", UIStyle.nine("dt", 3, 10))
+	_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_prompt_label = Label.new()
+	_prompt_label.add_theme_font_size_override("font_size", 16)
+	_prompt_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.82))
+	_prompt.add_child(_prompt_label)
+	_prompt.visible = false
+	hud.add_child(_prompt)
 
 
 ## Sits down on a seat from the map's seat_near().
@@ -852,6 +922,12 @@ func _build_hud() -> void:
 
 	_build_location_banner(hud)
 	_build_hotbar(hud)
+
+	_build_prompt(hud)
+	var tips := CanvasLayer.new() # one-time tips about the controls
+	tips.set_script(load("res://scripts/tips.gd"))
+	tips.set("player", self)
+	add_child(tips)
 
 	_toast = Label.new()
 	_toast.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)

@@ -21,6 +21,8 @@ Controls="*res://scripts/controls.gd"
 Story="*res://scripts/story/story.gd"
 SaveGame="*res://scripts/save_game.gd"
 MouseCursor="*res://scripts/mouse_cursor.gd"
+Juice="*res://scripts/juice.gd"
+Music="*res://scripts/music.gd"
 
 [display]
 

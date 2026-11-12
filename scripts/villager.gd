@@ -33,6 +33,7 @@ var _world: Node # map_generator
 var _clock: Node
 var _stop := "" # where the routine says to be right now
 var _route := PackedVector2Array() # world points still to walk; INF = go through a door
+var _talking := false # the player is chatting with us: stand still
 var _wait := 0.0 # wanderers pause between strolls
 
 
@@ -97,12 +98,26 @@ func _ready() -> void:
 		snap.call_deferred() # once the map has built its walking grid
 
 
+## A little bounce when the player starts talking to them.
+func react() -> void:
+	for layer in _layers:
+		Juice.squash(layer, -0.1, 0.3)
+
+
+## Called by the player when a chat (or shop) with us opens and closes.
+## While talking we stop where we are, even halfway down the road, and look at the player.
+func set_talking(on: bool) -> void:
+	_talking = on
+	if on and _layers[0].animation == "walk":
+		_play("idle")
+
+
 func _process(delta: float) -> void:
 	if _news:
 		_news.visible = Story.has_news(npc_id)
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	var distance := global_position.distance_to(player.global_position) if player else INF
-	if not routine.is_empty() and _clock:
+	if not routine.is_empty() and _clock and not _talking:
 		_follow_routine(delta)
 	var idle := _layers[0].animation == "idle" # sitting folk keep facing their table
 	if distance < 80.0 and turn_to_player and idle:

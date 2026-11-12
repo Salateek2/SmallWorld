@@ -121,6 +121,7 @@ func _buy(ware: Dictionary) -> void:
 	if player.coins < ware["price"]:
 		return
 	player.coins -= ware["price"]
+	Juice.sound("confirm")
 	player.give_tool(ware["tool"])
 	player.notify("Gus hands you the %s!" % ware["name"].to_lower())
 	_refresh()

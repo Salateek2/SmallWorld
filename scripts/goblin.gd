@@ -105,6 +105,8 @@ func take_damage(amount: int, from_position: Vector2) -> void:
 		return
 	hp -= amount
 	_knockback = (global_position - from_position).normalized() * 120.0
+	Juice.flash(_sprite) # white flash
+	Juice.puff(global_position, Color(0.75, 0.9, 0.5), 6)
 	if hp <= 0:
 		_dead = true
 		_collision.set_deferred("disabled", true)

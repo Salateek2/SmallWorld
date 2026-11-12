@@ -78,6 +78,8 @@ func _step(direction: int) -> void:
 
 
 func _select(index: int) -> void:
+	if index != _selected and is_inside_tree():
+		Juice.sound("tick")
 	_selected = index
 	var panel: PanelContainer = _options[index]["panel"]
 	if _cursor.get_parent():
@@ -90,6 +92,7 @@ func _select(index: int) -> void:
 func _pick(index: int) -> void:
 	if _options[index]["enabled"]:
 		_select(index)
+		Juice.sound("confirm")
 		chosen.emit(_options[index]["id"])
 
 

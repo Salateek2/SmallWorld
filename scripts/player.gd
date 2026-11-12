@@ -145,10 +145,14 @@ var _toast_tween: Tween
 var _quest_box: PanelContainer # current quest, under the clock
 var _quest_title: Label
 var _quest_goal: Label
+var _shown_coins := 0.0 # the HUD counts up/down to your real coins
+var _talking_to: Node2D # the villager we're chatting with (they stand still meanwhile)
+var _step_time := 0.0 # until the next puff of dust (running) or splash (swimming)
 
 
 func _ready() -> void:
 	hp = max_hp
+	_shown_coins = coins
 	add_to_group("player")
 	Story.player = self
 	_build_sprite_layers()
@@ -242,12 +246,29 @@ func _physics_process(delta: float) -> void:
 
 	if direction.x != 0.0:
 		_face(direction.x)
+	_update_footsteps(delta, direction)
 	if _swimming:
 		_play("swim") # just your head above the water
 	elif direction == Vector2.ZERO:
 		_play("idle")
 	else:
 		_play("run" if _run_blend > 0.5 else "walk")
+
+
+## Little puffs of dust behind your feet when running, splashes when swimming.
+func _update_footsteps(delta: float, direction: Vector2) -> void:
+	if direction == Vector2.ZERO or not (_swimming or _run_blend > 0.5):
+		_step_time = 0.0 # the first puff comes as soon as you get going
+		return
+	_step_time -= delta
+	if _step_time > 0.0:
+		return
+	if _swimming:
+		_step_time = 0.4
+		Juice.puff(global_position + Vector2(0, 6), Juice.WATER, 3, 16.0, 60.0)
+	else:
+		_step_time = 0.24
+		Juice.puff(global_position + Vector2(0, 8) - direction * 4.0, Juice.DUST, 2, 9.0, -12.0)
 
 
 # --- The "E" prompt --------------------------------------------------------------
@@ -340,6 +361,11 @@ func take_damage(amount: int, from_position: Vector2) -> void:
 	_update_hud()
 	_face(from_position.x - global_position.x) # turn toward the attacker
 	_invincible = INVINCIBLE_TIME
+	Juice.shake(3.0)
+	Juice.hit_stop(0.06)
+	Juice.sound("hurt")
+	for layer in _layers:
+		Juice.flash(layer, Color(1.0, 0.35, 0.35), 0.35) # red for a moment
 	if hp <= 0:
 		dead = true
 		modulate.a = 1.0
@@ -353,6 +379,8 @@ func take_damage(amount: int, from_position: Vector2) -> void:
 func _start_action(anim: String) -> void:
 	_busy = true
 	_hit_done = false
+	if anim == "attack":
+		Juice.sound("swish")
 	if _layers[0].sprite_frames.has_animation(anim):
 		_play(anim)
 	else:
@@ -379,9 +407,13 @@ func _apply_tool(anim: String) -> void:
 		"axe":
 			_chop()
 		"dig":
-			if farm:
-				farm.till(_aim_point())
+			Juice.sound("dig")
+			if farm and farm.till(_aim_point()):
+				Juice.puff(_aim_point() + Vector2(0, -3), Juice.DIRT, 8)
+				Juice.shake(0.5)
 		"water":
+			Juice.sound("water")
+			Juice.puff(_aim_point() + Vector2(0, -4), Juice.WATER, 8, 22.0)
 			if farm:
 				farm.water(_aim_point())
 		"doing":
@@ -394,8 +426,13 @@ func _swing_sword() -> void:
 	if _target_enemy and is_instance_valid(_target_enemy) \
 			and global_position.distance_to(_target_enemy.global_position) <= attack_range + 8.0:
 		_target_enemy.take_damage(attack_damage, global_position)
-	elif get_parent().has_method("try_cut"):
-		get_parent().try_cut(_aim_point()) # slash flowers, small bushes and mushrooms
+		Juice.sound("hit")
+		Juice.shake(1.5)
+		Juice.hit_stop()
+	elif get_parent().has_method("try_cut") and get_parent().try_cut(_aim_point()):
+		# Slashed a flower, small bush or mushroom: bits of it fly off
+		Juice.puff(_aim_point(), Juice.LEAF, 8)
+		Juice.sound("chop", 1.6)
 
 
 func _on_action_done(anim: String) -> void:
@@ -405,6 +442,7 @@ func _on_action_done(anim: String) -> void:
 	match anim:
 		"cast":
 			# The line is in the water: hold the last frame and wait for a bite
+			Juice.puff(global_position + Vector2(CAST_SPOTS[0].x * _facing, CAST_SPOTS[0].y), Juice.WATER, 6, 20.0)
 			_fishing = Fishing.WAITING
 			_fish_timer = randf_range(2.0, 6.0)
 			return
@@ -426,8 +464,18 @@ func _chop() -> void:
 	# The spot just in front of the character, at foot level
 	var target := global_position + Vector2(_facing * 12.0, 4.0)
 	var world := get_parent()
-	if world.has_method("try_chop"):
-		world.try_chop(target) # a felled tree drops wood to pick up (see pickup.gd)
+	if not world.has_method("try_chop"):
+		return
+	var result: int = world.try_chop(target) # a felled tree drops wood to pick up (see pickup.gd)
+	if result == 1: # hit: wood chips and a little thump
+		Juice.puff(target + Vector2(0, -6), Juice.WOOD, 6)
+		Juice.shake(0.8)
+		Juice.sound("chop", randf_range(0.9, 1.1))
+	elif result == 2: # felled: a burst of needles and a big thump
+		Juice.puff(target + Vector2(0, -14), Juice.LEAF, 18, 55.0)
+		Juice.puff(target, Juice.WOOD, 8)
+		Juice.shake(2.5)
+		Juice.sound("fell")
 
 
 func _harvest_or_plant() -> void:
@@ -438,11 +486,18 @@ func _harvest_or_plant() -> void:
 	if picked != "":
 		crops[picked] = crops.get(picked, 0) + 1
 		_update_hud()
+		# The crop hops out of the ground and flies into your pocket
+		Juice.toss(Farm.crop_texture(picked, Farm.STAGES), _aim_point() + Vector2(0, -6), self)
+		Juice.puff(_aim_point(), Juice.LEAF, 6)
+		Juice.gain(global_position + Vector2(0, -16), 1, picked)
+		Juice.sound("harvest")
 	elif tool == Tool.SEEDS:
 		var seed_type: String = Farm.CROP_TYPES[seed_index]
 		if seeds.get(seed_type, 0) > 0 and farm.plant(_aim_point(), seed_type):
 			seeds[seed_type] -= 1
 			_update_hotbar()
+			Juice.puff(_aim_point(), Juice.DIRT, 4, 18.0)
+			Juice.sound("plant")
 
 
 # --- Fishing ---------------------------------------------------------------
@@ -479,6 +534,7 @@ func _update_fishing(delta: float) -> void:
 				_fishing = Fishing.BITE
 				_fish_timer = BITE_WINDOW
 				_show_above_head(ALERT_ICON)
+				Juice.shake(0.6)
 		Fishing.BITE:
 			_fish_timer -= delta
 			if pressed:
@@ -508,6 +564,7 @@ func _finish_fishing() -> void:
 			world.drop_items(global_position + Vector2(-_facing * 14.0, 0), "fish", load(FISH_ICON),
 				FISH_PER_CATCH, Vector2(8, 16))
 		_show_toast("You caught fish!")
+		Juice.puff(global_position + Vector2(CAST_SPOTS[0].x * _facing, CAST_SPOTS[0].y), Juice.WATER, 10, 35.0)
 		_show_above_head(FISH_ICON)
 		await get_tree().create_timer(1.2).timeout
 		if _fishing == Fishing.NONE:
@@ -517,6 +574,7 @@ func _finish_fishing() -> void:
 func _show_above_head(path: String) -> void:
 	_above_head.texture = load(path)
 	_above_head.visible = true
+	Juice.pop_in(_above_head)
 
 
 func _show_toast(text: String) -> void:
@@ -524,6 +582,7 @@ func _show_toast(text: String) -> void:
 	if _toast_tween:
 		_toast_tween.kill()
 	_toast.modulate.a = 1.0
+	Juice.squash(_toast, 0.12, 0.25)
 	_toast_tween = create_tween()
 	_toast_tween.tween_interval(1.5)
 	_toast_tween.tween_property(_toast, "modulate:a", 0.0, 0.6)
@@ -540,6 +599,20 @@ func _update_clock() -> void:
 	if clock:
 		_clock_label.text = clock.time_text()
 	_update_quest_tracker()
+	_update_coin_counter()
+
+
+## The coins on the HUD roll up (or down) to the real number instead of jumping.
+func _update_coin_counter() -> void:
+	if int(_shown_coins) == coins:
+		return
+	if _shown_coins == roundf(_shown_coins) and coins > _shown_coins:
+		Juice.sound("coin") # just got paid
+	var step := maxf(0.34, absf(coins - _shown_coins) * 0.12)
+	_shown_coins = move_toward(_shown_coins, coins, step)
+	if int(_shown_coins) == coins:
+		_shown_coins = coins
+	_update_hud()
 
 
 ## Called by the clock at 2 AM.
@@ -593,15 +666,27 @@ func _npc_in_reach() -> Node2D:
 
 func _talk_to(npc: Node2D) -> void:
 	_face(npc.global_position.x - global_position.x)
+	if npc.has_method("react"):
+		npc.react() # a little bounce: they noticed you
+	Juice.sound("talk", 1.0, 4.0)
 	Story.talk_to(npc.npc_id) # the first chat of the day makes you closer
 	if npc.shop != "":
+		_hold(npc)
 		_open_menu(npc.shop) # e.g. Gus's smithy
 		return
 	var key := Story.dialogue_for(npc.npc_id)
 	if key == "":
 		return
+	_hold(npc)
 	_face(npc.global_position.x - global_position.x)
 	_open_menu("res://scripts/story/dialogue_box.gd", {"dialogue_key": key})
+
+
+## The villager stops walking and waits until the window closes (see _on_menu_closed).
+func _hold(npc: Node2D) -> void:
+	_talking_to = npc
+	if npc.has_method("set_talking"):
+		npc.set_talking(true)
 
 
 ## Big centered text that fades in and out over the game (e.g. "Chapter 1 complete").
@@ -646,6 +731,9 @@ func _on_menu_closed() -> void:
 	var clock := _clock()
 	if clock:
 		clock.paused = false
+	if is_instance_valid(_talking_to) and _talking_to.has_method("set_talking"):
+		_talking_to.set_talking(false) # they carry on with their day
+	_talking_to = null
 	# Wait a moment so the key that closed the menu doesn't open it again
 	await get_tree().create_timer(0.2).timeout
 	_in_menu = false
@@ -658,6 +746,8 @@ func add_item(item: String, amount: int) -> void:
 	else:
 		crops[item] = crops.get(item, 0) + amount
 	refresh_ui()
+	Juice.pickup_sound()
+	Juice.gain(global_position + Vector2(0, -16), amount, item)
 
 
 ## Everything about the player worth saving.
@@ -675,6 +765,7 @@ func set_state(data: Dictionary) -> void:
 	global_position = Vector2(data["position"][0], data["position"][1])
 	hp = int(data["hp"])
 	coins = int(data["coins"])
+	_shown_coins = coins
 	wood = int(data["wood"])
 	crops = {}
 	for item in data["crops"]:
@@ -742,6 +833,8 @@ func _next_seed_type() -> void:
 func _select_tool(t: int) -> void:
 	tool = t as Tool
 	_update_hotbar()
+	Juice.squash(_hotbar_slots[tool], -0.18, 0.2) # the slot you picked bounces
+	Juice.sound("tick")
 
 
 func _enemy_in_front() -> Node2D:
@@ -1089,4 +1182,4 @@ func give_tool(t: int) -> void:
 
 func _update_hud() -> void:
 	# Crops, fish and wood are listed in the inventory (I / Tab)
-	_hud_label.text = "HP: %d / %d    Coins: %d" % [maxi(hp, 0), max_hp, coins]
+	_hud_label.text = "HP: %d / %d    Coins: %d" % [maxi(hp, 0), max_hp, int(_shown_coins)]

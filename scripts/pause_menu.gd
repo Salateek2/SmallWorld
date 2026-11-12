@@ -1,5 +1,5 @@
 extends CanvasLayer
-## SmallWorld pause menu (Esc in the game): Resume, or save and go back to the title screen.
+## SmallWorld pause menu (Esc in the game): Resume, music on/off, or save and go back to the title screen.
 ## Opened by the player like the other menus, so time stands still while it's open.
 
 signal closed
@@ -36,8 +36,9 @@ func _ready() -> void:
 
 	var menu := MenuList.new()
 	menu.add_option("resume", "Resume")
+	menu.add_option("music", Music.button_text())
 	menu.add_option("quit", "Save & quit to title")
-	menu.chosen.connect(_on_chosen)
+	menu.chosen.connect(_on_chosen.bind(menu))
 	column.add_child(menu)
 
 
@@ -47,10 +48,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		_close()
 
 
-func _on_chosen(id: String) -> void:
+func _on_chosen(id: String, menu: MenuList) -> void:
 	match id:
 		"resume":
 			_close()
+		"music":
+			Music.muted = not Music.muted
+			menu.set_option_text("music", Music.button_text())
 		"quit":
 			SaveGame.save_game()
 			get_tree().change_scene_to_file("res://title.tscn")

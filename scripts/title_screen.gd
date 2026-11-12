@@ -102,16 +102,17 @@ func _build_ui() -> void:
 	_menu.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_menu.add_option("continue", "Continue", SaveGame.has_save())
 	_menu.add_option("new", "New Game")
+	_menu.add_option("music", Music.button_text())
 	_menu.add_option("quit", "Quit")
 	_menu.chosen.connect(_on_chosen)
 	column.add_child(_menu)
 
-	var credits := _text("Art: Sunnyside World by Daniel Diggle   Font: Press Start 2P", 8, Color(1, 1, 1, 0.7))
+	var credits := _text("Art: Sunnyside World by Daniel Diggle   Music: Jonathan Khaing, Alexander Nakarada   Font: Press Start 2P", 8, Color(1, 1, 1, 0.7))
 	credits.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	credits.offset_top = -24
 	credits.offset_bottom = -12
-	credits.offset_left = -400
-	credits.offset_right = 400
+	credits.offset_left = -560
+	credits.offset_right = 560
 	ui.add_child(credits)
 
 	_fade = ColorRect.new()
@@ -135,6 +136,9 @@ func _on_chosen(id: String) -> void:
 				return
 			SaveGame.new_game()
 			_start_game()
+		"music":
+			Music.muted = not Music.muted
+			_menu.set_option_text("music", Music.button_text())
 		"quit":
 			get_tree().quit()
 

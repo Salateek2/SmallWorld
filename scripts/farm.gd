@@ -29,6 +29,7 @@ var _soil_dry: Texture2D
 var _soil_wet: Texture2D
 var _corners := {} # "tl", "tr", "bl", "br" -> the pack's gold bracket textures
 var _time := 0.0
+var _sparkle_time := 0.0 # until the next twinkle on a ripe crop
 var _plots := {} # cell -> {soil: Sprite2D, crop: Sprite2D or null, type, stage, wet, grown}
 
 
@@ -44,6 +45,14 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_time += delta
 	queue_redraw() # keeps the aim brackets in sync with the player and bouncing
+	# Ripe crops twinkle now and then, so you can spot what's ready to pick
+	_sparkle_time -= delta
+	if _sparkle_time <= 0.0:
+		_sparkle_time = 0.5
+		var ripe := _plots.keys().filter(func(cell): return _plots[cell].crop != null and _plots[cell].stage >= RIPE)
+		if not ripe.is_empty():
+			var spot := to_global(_ground.map_to_local(ripe.pick_random())) + Vector2(randf_range(-5, 5), randf_range(-10, 0))
+			Juice.puff(spot, Juice.SPARKLE, 2, 6.0, -14.0)
 
 
 ## Called by the clock every morning: watered crops grow, then all soil dries.
@@ -104,6 +113,7 @@ func till(world_pos: Vector2) -> bool:
 	soil.texture = _soil_dry
 	soil.position = _ground.map_to_local(cell)
 	add_child(soil)
+	Juice.pop_in(soil, 0.2)
 	_plots[cell] = {"soil": soil, "crop": null, "type": "", "stage": 0, "wet": false, "grown": 0}
 	return true
 
@@ -121,6 +131,7 @@ func plant(world_pos: Vector2, crop_type: String) -> bool:
 	plot.crop.centered = false
 	add_child(plot.crop)
 	_update_crop_sprite(cell)
+	Juice.pop_in(plot.crop)
 	return true
 
 
@@ -128,7 +139,10 @@ func plant(world_pos: Vector2, crop_type: String) -> bool:
 func water(world_pos: Vector2) -> bool:
 	if not can_water(world_pos):
 		return false
-	_set_wet(_plots[cell_at(world_pos)], true)
+	var plot: Dictionary = _plots[cell_at(world_pos)]
+	_set_wet(plot, true)
+	if plot.crop != null:
+		Juice.squash(plot.crop, 0.2) # the plant wobbles under the water
 	return true
 
 
@@ -193,6 +207,8 @@ func _update_crop_sprite(cell: Vector2i) -> void:
 	var plot: Dictionary = _plots[cell]
 	var tex := crop_texture(plot.type, plot.stage)
 	plot.crop.texture = tex
-	# Crop sprites have different sizes: center them and stand them on the soil
+	# Crop sprites have different sizes: center them and stand them on the soil.
+	# The sprite's own position is where it stands, so bounces grow from the ground up.
 	var bottom := _ground.map_to_local(cell) + Vector2(0, 4)
-	plot.crop.position = (bottom - tex.get_size() * Vector2(0.5, 1.0)).round()
+	plot.crop.position = bottom
+	plot.crop.offset = (bottom - tex.get_size() * Vector2(0.5, 1.0)).round() - bottom

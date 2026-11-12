@@ -95,8 +95,11 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if _shown < _text.text.length():
+		var before := int(_shown)
 		_shown += delta * LETTERS_PER_SECOND
 		_text.visible_characters = int(_shown)
+		if int(_shown) / 4 != before / 4: # a soft blip every few letters while it types
+			Juice.sound("talk", randf_range(0.92, 1.08), -6.0)
 	_next_arrow.visible = _is_line_done() and _choices == null
 
 

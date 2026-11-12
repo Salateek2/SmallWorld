@@ -28,6 +28,7 @@ func launch(from: Vector2, to: Vector2) -> void:
 	var tween := create_tween()
 	tween.tween_property(self, "global_position", to, POP_TIME)
 	tween.parallel().tween_method(_set_height.bind(POP_HEIGHT), 0.0, 1.0, POP_TIME)
+	tween.tween_callback(func(): Juice.squash(_sprite, 0.3, 0.25)) # squashes as it lands
 	tween.tween_method(_set_height.bind(4.0), 0.0, 1.0, 0.18) # little bounce
 	tween.tween_callback(func(): _can_collect = true)
 

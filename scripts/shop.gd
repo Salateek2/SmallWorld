@@ -133,6 +133,7 @@ func _buy(crop: String, amount: int) -> void:
 	if player.coins < cost:
 		return
 	player.coins -= cost
+	Juice.sound("confirm")
 	player.seeds[crop] = player.seeds.get(crop, 0) + amount
 	player.refresh_ui()
 	refresh()
@@ -144,6 +145,7 @@ func _buy_animal(type: String) -> void:
 	if ranch == null or player.coins < price or not ranch.add_animal(type):
 		return
 	player.coins -= price
+	Juice.sound("confirm")
 	player.refresh_ui()
 	player.notify("A new %s is waiting in your pen!" % Ranch.TYPES[type]["name"].to_lower())
 	refresh()

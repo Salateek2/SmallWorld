@@ -270,11 +270,66 @@ const TOWER := {"origin": Vector2i(30, 9), "size": Vector2i(1, 5)}
 const COTTAGE_COUNT := 8
 const TOWER_COUNT := 3
 
+# Village props that aren't in the pack (assets/village/props.png, drawn by
+# tools/make_village_props.py from the pack's own tree and item art): source PROPS_SOURCE.
+const PROPS_SOURCE := 5
+const PROPS_SHEET := "res://assets/village/props.png"
+const ROUND_TREES := [ # leafy trees for the village and the groves (not choppable)
+	{"origin": Vector2i(0, 0), "size": Vector2i(2, 3), "source": PROPS_SOURCE},
+	{"origin": Vector2i(2, 0), "size": Vector2i(2, 3), "source": PROPS_SOURCE},
+]
+const NOTICE_BOARD := {"origin": Vector2i(4, 0), "size": Vector2i(2, 2), "source": PROPS_SOURCE}
+const SIGN_SEEDS := {"origin": Vector2i(6, 0), "size": Vector2i(1, 2), "source": PROPS_SOURCE}
+const SIGN_STORE := {"origin": Vector2i(7, 0), "size": Vector2i(1, 2), "source": PROPS_SOURCE}
+const SIGN_RANCH := {"origin": Vector2i(8, 0), "size": Vector2i(1, 2), "source": PROPS_SOURCE}
+const SIGN_SMITHY := {"origin": Vector2i(9, 0), "size": Vector2i(1, 2), "source": PROPS_SOURCE}
+const HAY_BALE := {"origin": Vector2i(4, 2), "size": Vector2i(2, 1), "source": PROPS_SOURCE}
+const GRAIN_SACK := {"origin": Vector2i(6, 2), "size": Vector2i(1, 1), "source": PROPS_SOURCE}
+const PROPS_COLLISION := {
+	Vector2i(0, 2): Rect2(10, 6, 6, 8), Vector2i(1, 2): Rect2(0, 6, 6, 8), # tree trunks
+	Vector2i(2, 2): Rect2(10, 6, 6, 8), Vector2i(3, 2): Rect2(0, 6, 6, 8),
+	Vector2i(4, 1): Rect2(4, 8, 12, 6), Vector2i(5, 1): Rect2(0, 8, 12, 6), # notice board posts
+	Vector2i(6, 1): Rect2(5, 8, 6, 6), Vector2i(7, 1): Rect2(5, 8, 6, 6), # sign posts
+	Vector2i(8, 1): Rect2(5, 8, 6, 6), Vector2i(9, 1): Rect2(5, 8, 6, 6),
+	Vector2i(4, 2): Rect2(3, 4, 13, 10), Vector2i(5, 2): Rect2(0, 4, 13, 10), # hay bale
+	Vector2i(6, 2): Rect2(3, 5, 10, 9), # sack
+}
+# Props from the pack's tileset that dress up the buildings
+const CRATE_STACK := {"origin": Vector2i(35, 9), "size": Vector2i(2, 3), "solid_rows": 2} # open crate on a crate
+const CRATE_STACK_SHUT := {"origin": Vector2i(37, 9), "size": Vector2i(2, 3), "solid_rows": 2}
+const CRATE_PILE := {"origin": Vector2i(39, 9), "size": Vector2i(2, 2)}
+const KEG := Vector2i(37, 16)
+const BARREL_SHUT := Vector2i(39, 16)
+const BARREL_LAMP := {"origin": Vector2i(41, 15), "size": Vector2i(1, 2)}
+const MARKET_TABLES := {"origin": Vector2i(46, 12), "size": Vector2i(2, 2)} # red-cloth stalls
+const ROOFED_WELL := {"origin": Vector2i(40, 19), "size": Vector2i(2, 3), "solid_rows": 2}
+const CAMPFIRE := {"origin": Vector2i(37, 21), "size": Vector2i(2, 2), "solid_rows": 2}
+const POTS: Array[Vector2i] = [Vector2i(49, 19), Vector2i(50, 19), Vector2i(50, 20)]
+const BOULDERS := [ # rock formations: two big boulders and a middling one
+	{"origin": Vector2i(49, 21), "size": Vector2i(2, 2)},
+	{"origin": Vector2i(51, 21), "size": Vector2i(2, 2)},
+	{"origin": Vector2i(53, 21), "size": Vector2i(2, 2)},
+]
+const SMALL_ROCKS: Array[Vector2i] = [Vector2i(31, 4), Vector2i(32, 4), Vector2i(33, 4), Vector2i(34, 4), Vector2i(55, 22)]
+const SMALL_BUSHES: Array[Vector2i] = [
+	Vector2i(27, 1), Vector2i(28, 1), Vector2i(29, 1), Vector2i(30, 1),
+	Vector2i(27, 4), Vector2i(28, 4), Vector2i(29, 4), Vector2i(30, 4),
+	Vector2i(27, 2), Vector2i(28, 2), Vector2i(29, 2), Vector2i(30, 3),
+]
+const FLOWER_BEDS: Array[Vector2i] = [ # every flower in the pack, singles and little bunches
+	Vector2i(31, 1), Vector2i(31, 2), Vector2i(31, 3), Vector2i(32, 1), Vector2i(32, 2), Vector2i(32, 3),
+	Vector2i(33, 1), Vector2i(33, 2), Vector2i(33, 3), Vector2i(34, 1), Vector2i(34, 2), Vector2i(34, 3), Vector2i(35, 3),
+]
+# Groves, flower patches and rock fields come from smooth noise, so they form clumps
+# with open glades between them instead of an even sprinkle.
+const GROVE_SCALE := 0.085
+const ANIMAL_STRIPS := "res://assets/Sunnyside_World_Assets/Elements/Animals/"
+
 ## Named places: center as a fraction of the map size, radius in tiles.
 ## The forest is the band along the top of the map instead (see _forest_edge).
 const LOCATIONS := {
 	"farm": {"name": "Your Farm", "center": Vector2(0.30, 0.56), "radius": Vector2(13, 10)},
-	"village": {"name": "Willowbrook Village", "center": Vector2(0.64, 0.47), "radius": Vector2(24, 17)},
+	"village": {"name": "Willowbrook Village", "center": Vector2(0.64, 0.47), "radius": Vector2(34, 19)},
 	"lake": {"name": "Mirror Lake", "center": Vector2(0.80, 0.80), "radius": Vector2(17, 10)},
 	"meadow": {"name": "Sunny Meadow", "center": Vector2(0.13, 0.82), "radius": Vector2(13, 9)},
 }
@@ -308,7 +363,18 @@ const COLLISION_RECTS := {
 	Vector2i(44, 21): Rect2(0, 0, 16, 10), Vector2i(45, 21): Rect2(0, 0, 16, 10),
 	Vector2i(35, 10): Rect2(8, 0, 8, 14), Vector2i(36, 10): Rect2(0, 0, 8, 14), # market crates
 	Vector2i(37, 10): Rect2(8, 0, 8, 14), Vector2i(38, 10): Rect2(0, 0, 8, 14),
-	Vector2i(39, 10): Rect2(0, 0, 16, 14),
+	Vector2i(39, 10): Rect2(0, 0, 16, 14), Vector2i(40, 10): Rect2(0, 0, 16, 14),
+	Vector2i(37, 16): Rect2(4, 6, 8, 8), Vector2i(39, 16): Rect2(3, 4, 10, 10), Vector2i(41, 16): Rect2(3, 4, 10, 10), # keg, barrels
+	Vector2i(46, 13): Rect2(0, 0, 16, 10), Vector2i(47, 13): Rect2(0, 0, 16, 10), # market tables
+	Vector2i(40, 20): Rect2(6, 8, 10, 8), Vector2i(41, 20): Rect2(0, 8, 10, 8), # roofed well
+	Vector2i(40, 21): Rect2(6, 0, 10, 10), Vector2i(41, 21): Rect2(0, 0, 10, 10),
+	Vector2i(37, 21): Rect2(6, 9, 10, 7), Vector2i(38, 21): Rect2(0, 9, 10, 7), # campfire stones
+	Vector2i(37, 22): Rect2(6, 0, 10, 8), Vector2i(38, 22): Rect2(0, 0, 10, 8),
+	Vector2i(49, 22): Rect2(5, 0, 11, 12), Vector2i(50, 22): Rect2(0, 0, 11, 12), # boulders
+	Vector2i(51, 22): Rect2(5, 0, 11, 12), Vector2i(52, 22): Rect2(0, 0, 11, 12),
+	Vector2i(53, 22): Rect2(8, 0, 8, 10), Vector2i(54, 22): Rect2(0, 0, 8, 10),
+	Vector2i(34, 4): Rect2(4, 3, 8, 6), Vector2i(55, 22): Rect2(4, 4, 9, 9), # small rocks
+	Vector2i(49, 19): Rect2(4, 4, 8, 9), Vector2i(50, 19): Rect2(4, 4, 8, 9), Vector2i(50, 20): Rect2(4, 4, 8, 9), # pots
 }
 # Furniture you bump into (bottom tile of beds and cupboards)
 const FURNITURE_RECTS := {
@@ -367,6 +433,10 @@ var bin_cell := Vector2i(-1, -1) # where the shipping bin stands (set when the g
 @export_storage var small_buildings: Array[Rect2i] = []
 ## Where roads cross the river on wooden bridges (walkable, not water to swim in)
 @export_storage var bridge_cells: Array[Vector2i] = []
+## Solid building parts that aren't rooms (the wings of L-shaped houses)
+@export_storage var solid_rects: Array[Rect2i] = []
+## The ranch's fenced pastures (animals are put in them when the game starts)
+@export_storage var pastures: Array[Rect2i] = []
 
 var _rng := RandomNumberGenerator.new()
 var _blocked := {} # cells that already have a path, water or object
@@ -391,10 +461,12 @@ func _ready() -> void:
 	_setup_houses()
 	_setup_cliff_walls()
 	_setup_small_building_walls()
+	_setup_solid_rects()
 	_add_water_effects()
 	_spawn_clouds()
 	_spawn_farm()
 	_spawn_ranch()
+	_spawn_pasture_animals()
 	_spawn_shipping_bin()
 	_spawn_clock()
 	_spawn_merchant()
@@ -435,12 +507,16 @@ func generate() -> void:
 	_setup_cliff_source(ground.tile_set)
 	_setup_path_source(ground.tile_set)
 	_setup_sheet_source(ground.tile_set, SAND_SOURCE, SAND_SHEET)
+	_setup_sheet_source(ground.tile_set, PROPS_SOURCE, PROPS_SHEET)
 	for layer in [ground, decor]:
 		_setup_collision(layer.tile_set)
 
 	clear()
 	houses.clear()
 	bridge_cells.clear()
+	solid_rects.clear()
+	pastures.clear()
+	small_buildings.clear()
 	plateaus.clear()
 	ramps.clear()
 	ladder_cells.clear()
@@ -460,9 +536,10 @@ func generate() -> void:
 	if not _from_sketch:
 		_make_lake(ground)
 	var plaza := _make_village(layers)
-	_make_roads(ground, decor, plaza)
+	_make_roads(layers, plaza)
 	_connect_doors(ground, decor)
 	_join_diagonal_paths(ground, decor)
+	_dress_village(layers)
 	if not _from_sketch:
 		for i in pond_count:
 			_make_pond(ground)
@@ -561,27 +638,7 @@ func _paint_path(ground: TileMapLayer, decor: TileMapLayer, cell: Vector2i) -> v
 func _make_pen(decor: TileMapLayer) -> void:
 	var home: Rect2i = houses[0]["rect"]
 	pen_rect = Rect2i(home.position + Vector2i(-PEN_SIZE.x - 2, 0), PEN_SIZE)
-	var gate := [PEN_SIZE.x / 2 - 1, PEN_SIZE.x / 2]
-	for x in PEN_SIZE.x:
-		for y in PEN_SIZE.y:
-			var cell := pen_rect.position + Vector2i(x, y)
-			_blocked[cell] = true # nothing grows inside
-			var last_x := x == PEN_SIZE.x - 1
-			var last_y := y == PEN_SIZE.y - 1
-			var piece := Vector2i(-1, -1)
-			if y == 0:
-				piece = FENCE_TOP_LEFT if x == 0 else (FENCE_TOP_RIGHT if last_x else FENCE_MIDDLE)
-			elif last_y:
-				if x == 0: piece = FENCE_BOTTOM_LEFT
-				elif last_x: piece = FENCE_BOTTOM_RIGHT
-				elif gate.has(x): continue # opening to walk in
-				elif gate.has(x + 1): piece = FENCE_RIGHT # end posts either side of the gate
-				elif gate.has(x - 1): piece = FENCE_LEFT
-				else: piece = FENCE_MIDDLE
-			elif x == 0 or last_x:
-				piece = FENCE_SIDE
-			if piece.x >= 0:
-				_set_tile(decor, cell, piece)
+	_fence_rect(decor, pen_rect)
 	trough_cell = pen_rect.position + Vector2i(2, 1)
 	_place_tiles(decor, trough_cell, TROUGH)
 
@@ -995,54 +1052,123 @@ func _fill_water(ground: TileMapLayer, rects: Array[Rect2i]) -> void:
 					_blocked[cell] = true
 
 
-## Builds the village around a dirt plaza. Returns the plaza's center tile.
+## Builds Willowbrook: a terrace with the town hall and the tavern above an uneven plaza,
+## shops and houses staggered around it (no two in a row), the smithy and the ranch out
+## toward the river. Returns the plaza's center tile.
+## House order matters (story_text.gd's "home" numbers): 1-6 houses, 7 tavern, 8 smithy,
+## then 9 town hall, 10 seed shop, 11 general store, 12 ranch barn.
 func _make_village(layers: Dictionary) -> Vector2i:
-	var ground: TileMapLayer = layers["ground"]
-	var decor: TileMapLayer = layers["decor"]
-	var canopy: TileMapLayer = layers["canopy"]
 	var c := location_center("village")
-	var plaza_radius := Vector2(6, 4)
-	for x in range(-6, 7):
-		for y in range(-4, 5):
-			if _in_ellipse(c + Vector2i(x, y), c, plaza_radius + Vector2(0.5, 0.5)):
-				_paint_path(ground, decor, c + Vector2i(x, y))
+	var f := Vector2(c) # for path points between tiles
+	_shape_terrace(c)
+	var green := HOUSE_COLOURS[1]
+	var orange := HOUSE_COLOURS[2]
+	var red := HOUSE_COLOURS[3]
+	var purple := HOUSE_COLOURS[4]
 
-	_place_object(decor, canopy, c + Vector2i(-1, -3), STATUE) # statue in the middle
-	_place_object(decor, canopy, c + Vector2i(9, -1), WELL)
-	# Market between the two south houses: crates of produce, merchant behind them
-	# (the stall itself is made of sprites in _spawn_merchant)
-	market_cell = c + Vector2i(-2, 7)
-	for x in range(-1, 6):
-		for y in range(-2, 3):
-			_blocked[market_cell + Vector2i(x, y)] = true # keep the area around it clear
-
-	# Upper Willowbrook: a plateau behind the plaza, its cliff just above the plaza,
-	# with a ramp in the middle down to the plaza
-	var upper := Rect2i(c + Vector2i(-21, -18), Vector2i(43, 11)) # front edge on row c.y - 8
-	var ramp := Rect2i(c.x - 1, upper.end.y, 2, 2)
-	_add_plateau(ground, layers["shore"], upper, [ramp])
-	# Its street runs along the front edge; the ramp carries it down to the plaza
-	for x in range(-19, 20):
-		for y in [-9, -8]:
-			_paint_path(ground, decor, c + Vector2i(x, y))
-	for x in range(ramp.position.x, ramp.end.x):
-		_paint_path(ground, decor, Vector2i(x, ramp.end.y)) # the foot of the ramp joins the plaza
-
-	# Houses in random colours: five up on the plateau along its street, two below the plaza
-	var colours := HOUSE_COLOURS.slice(1)
-	var first := _rng.randi() % colours.size()
-	var spots: Array[Vector2i] = [
-		Vector2i(-20, -15), Vector2i(-12, -15), Vector2i(4, -15), Vector2i(12, -15),
-		Vector2i(-9, 6), Vector2i(3, 6),
-	]
-	for i in spots.size():
-		_build_house(layers, c + spots[i], 4, colours[(first + i) % colours.size()], _rng.randf() < CHIMNEY_CHANCE)
-	# Isla's tavern in the middle of the upper street: bigger, its hall is built in _build_tavern
-	var tavern := _build_house(layers, c + TAVERN_OFFSET, 6, HOUSE_COLOURS[2], true, 8, false)
+	# Houses: two up on the terrace's east end, the rest around the plaza
+	_build_house(layers, c + Vector2i(6, -16), 4, green, true)
+	_build_house(layers, c + Vector2i(14, -18), 4, red, false)
+	_build_house(layers, c + Vector2i(-18, -7), 4, purple, true)
+	_build_house(layers, c + Vector2i(-2, 7), 4, orange, true)
+	var tom := _build_house(layers, c + Vector2i(8, 6), 4, purple, false)
+	_add_wing(layers, tom, false, 2, 5, 1, purple)
+	_build_house(layers, c + Vector2i(19, -2), 4, green, _rng.randf() < CHIMNEY_CHANCE)
+	# Isla's tavern on the terrace's west end: bigger, its hall is built in _build_tavern
+	var tavern := _build_house(layers, c + Vector2i(-17, -18), 6, orange, true, 7, false)
 	tavern["tavern"] = true
 	tavern_rect = tavern["rect"]
-	_make_smithy(layers, c + Vector2i(-22, 4))
+	_make_smithy(layers, c + Vector2i(-33, -9))
+	# The town hall: the biggest roof in the village, at the top of the ramp behind the statue
+	var hall := _build_house(layers, c + Vector2i(-5, -17), 8, HOUSE_COLOURS[0], true, 8, false)
+	hall["name"] = "Town Hall"
+	_add_roof_tier(layers, hall, 2, HOUSE_COLOURS[0])
+	_furnish_shop(layers["decor"], hall)
+	# The shops either side of the plaza
+	var seeds := _build_house(layers, c + Vector2i(-15, 2), 5, green, false, 6, false)
+	seeds["name"] = "Seed Shop"
+	_add_wing(layers, seeds, true, 2, 5, 1, green)
+	_furnish_shop(layers["decor"], seeds)
+	var store := _build_house(layers, c + Vector2i(9, -4), 6, red, true, 7, false)
+	store["name"] = "General Store"
+	_add_roof_tier(layers, store, 2, red)
+	_furnish_shop(layers["decor"], store)
+	# The ranch, out by the river
+	var barn := _build_house(layers, c + Vector2i(-31, 8), 6, red, false, 7, false)
+	barn["name"] = "Ranch Barn"
+	_add_roof_tier(layers, barn, 2, red)
+	_furnish_shop(layers["decor"], barn)
+	pastures = [Rect2i(c + Vector2i(-35, 17), Vector2i(11, 8)), Rect2i(c + Vector2i(-20, 12), Vector2i(10, 8))]
+	for pasture in pastures:
+		_fence_rect(layers["decor"], pasture, true)
+
+	# The plaza: a lopsided blob, with a lobe for the market and one toward the store
+	var blobs := [
+		[Vector2(c) + Vector2(0, -0.5), Vector2(8.5, 5.2)],
+		[Vector2(c) + Vector2(-5, 3.5), Vector2(3.4, 3.4)],
+		[Vector2(c) + Vector2(6.5, 1.5), Vector2(3.0, 2.6)],
+	]
+	for x in range(-10, 11):
+		for y in range(-6, 8):
+			var cell := c + Vector2i(x, y)
+			for blob in blobs:
+				if ((Vector2(cell) - blob[0]) / blob[1]).length_squared() <= 1.0:
+					_paint_path(layers["ground"], layers["decor"], cell)
+					break
+	for x in [c.x - 1, c.x]:
+		_paint_path(layers["ground"], layers["decor"], Vector2i(x, c.y - 6)) # the foot of the ramp
+	# The market stall stands in the plaza's south-west lobe, by the seed shop
+	# (the stall itself is made of sprites in _spawn_merchant)
+	market_cell = c + Vector2i(-7, 4)
+	for x in range(-1, 6):
+		for y in range(-2, 2):
+			_blocked[market_cell + Vector2i(x, y)] = true # keep the area around it clear
+
+	# Footpaths. On the terrace they are laid tile by tile (a curve could cut the cliff);
+	# below, they curve from door to door.
+	_trail(layers, [c + Vector2i(-13, -11), c + Vector2i(-10, -11), c + Vector2i(-8, -9), c + Vector2i(9, -9)], 0.71, false)
+	_trail(layers, [c + Vector2i(9, -9), c + Vector2i(9, -10), c + Vector2i(12, -10), c + Vector2i(12, -11),
+		c + Vector2i(17, -11), c + Vector2i(17, -12)], 0.71, false)
+	_trail(layers, [c + Vector2i(-15, -1), c + Vector2i(-15, 0)], 0.8) # Lily's door
+	_trail(layers, [c + Vector2i(-30, -3), f + Vector2(-30, -1.5), f + Vector2(-29, 0)], 0.8) # the smithy
+	_trail(layers, [c + Vector2i(-24, -2), f + Vector2(-24, -0.5)], 0.8) # its yard
+	_trail(layers, [c + Vector2i(-12, 8), f + Vector2(-10, 8.6), f + Vector2(-8, 7.4), f + Vector2(-6, 6.2)], 0.8) # seed shop
+	_trail(layers, [c + Vector2i(13, 3), f + Vector2(11, 4), f + Vector2(8, 2.5)], 0.8) # general store
+	_trail(layers, [c + Vector2i(1, 13), f + Vector2(3, 14.5), f + Vector2(6, 14)], 0.8) # Rosa's
+	_trail(layers, [c + Vector2i(11, 13), f + Vector2(9, 14.3), f + Vector2(6.5, 14)], 0.8) # Tom's
+	# Out to the ranch: down past the seed shop to the barn door and both pasture gates
+	_trail(layers, [c + Vector2i(-22, 1), f + Vector2(-22, 5), f + Vector2(-22.5, 10), f + Vector2(-23, 14.5),
+		f + Vector2(-27, 15.2)], 0.8)
+	_trail(layers, [f + Vector2(-27, 15.2), f + Vector2(-28.5, 16), f + Vector2(-30, 16.5)], 0.8)
+	_trail(layers, [f + Vector2(-22.5, 9), f + Vector2(-19, 11.2), f + Vector2(-15.5, 11.6), f + Vector2(-15.5, 12)], 0.8)
 	return c
+
+
+## The village terrace (Upper Willowbrook): a stepped shape instead of a plain box - a deep
+## middle with the ramp down to the plaza, and a shallower wing either side.
+func _shape_terrace(c: Vector2i) -> void:
+	for x in range(-22, 24):
+		for y in range(-18, -8):
+			_set_height(c + Vector2i(x, y), 0)
+	var parts: Array[Rect2i] = [
+		Rect2i(c + Vector2i(-19, -18), Vector2i(8, 8)), # west wing
+		Rect2i(c + Vector2i(-11, -18), Vector2i(24, 10)), # the middle
+		Rect2i(c + Vector2i(13, -18), Vector2i(8, 8)), # east wing
+	]
+	for part in parts:
+		plateaus.append(part)
+		for x in range(part.position.x, part.end.x):
+			for y in range(part.position.y, part.end.y):
+				_set_height(Vector2i(x, y), 1)
+	for x in range(-19, -17): # the west wing's back corner is cut off
+		for y in range(-18, -16):
+			_set_height(c + Vector2i(x, y), 0)
+	var ramp := Rect2i(c.x - 1, c.y - 8, 2, 2)
+	ramps.append(ramp)
+	for x in range(ramp.position.x, ramp.end.x):
+		for y in range(ramp.position.y, ramp.end.y):
+			ramp_cells[Vector2i(x, y)] = true
+	_block_levels()
 
 
 ## Gus's smithy: his house, and beside it a dirt work yard with the forge against the
@@ -1054,6 +1180,8 @@ func _make_smithy(layers: Dictionary, house_corner: Vector2i) -> void:
 	var yard := Rect2i(house_corner + Vector2i(6, 1), Vector2i(7, 6))
 	for x in range(yard.position.x, yard.end.x):
 		for y in range(yard.position.y, yard.end.y):
+			if (x == yard.position.x or x == yard.end.x - 1) and y == yard.end.y - 1:
+				continue # rounded bottom corners
 			_paint_path(ground, decor, Vector2i(x, y))
 	_place_tiles(decor, yard.position, FORGE)
 	forge_cell = yard.position + Vector2i(0, 1)
@@ -1061,6 +1189,246 @@ func _make_smithy(layers: Dictionary, house_corner: Vector2i) -> void:
 	_place_tiles(decor, yard.position + Vector2i(2, 3), ANVIL)
 	_set_tile(decor, yard.position + Vector2i(6, 1), BARREL_OPEN)
 	_set_tile(decor, yard.position + Vector2i(6, 3), BARREL_WATER)
+
+
+## A second, narrower roof standing on top of a house's roof (a taller building).
+## It belongs to the house's roof: it fades with it when you walk in.
+func _add_roof_tier(layers: Dictionary, house: Dictionary, inset: int, colour: int) -> void:
+	var roofs: TileMapLayer = layers["roofs"]
+	var rect: Rect2i = house["rect"]
+	var shade := Vector2i(0, colour)
+	var left := rect.position.x + inset
+	var right := rect.end.x - 1 - inset
+	for x in range(left, right + 1):
+		for t in 3:
+			var cell := Vector2i(x, rect.position.y - 2 + t)
+			_blocked[cell] = true
+			var tile: Vector2i
+			if x == left or x == right:
+				tile = (POST_LEFT if x == left else POST_RIGHT) + shade + Vector2i(0, [0, 1, 4][t])
+			else:
+				tile = ROOF + shade + Vector2i(0, [0, 3, 4][t])
+				if t == 1 and x == (left + right) / 2:
+					tile = ROOF_WINDOW + shade
+			_set_tile(roofs, cell, tile)
+	house["roof_extra"] = Rect2i(left, rect.position.y - 2, right - left + 1, 2)
+
+
+## A side wing on a house, its front `drop` rows further forward: an L-shaped building.
+## The wing is solid (the room inside is the main house).
+func _add_wing(layers: Dictionary, house: Dictionary, on_left: bool, inner: int, height: int, drop: int, colour: int) -> void:
+	var decor: TileMapLayer = layers["decor"]
+	var canopy: TileMapLayer = layers["canopy"]
+	var rect: Rect2i = house["rect"]
+	var width := inner + 2
+	var shade := Vector2i(0, colour)
+	var corner := Vector2i(rect.position.x - width if on_left else rect.end.x, rect.end.y + drop - height)
+	for x in width:
+		for y in height:
+			var cell := corner + Vector2i(x, y)
+			_blocked[cell] = true
+			if x == 0 or x == width - 1:
+				var post_row := 0 if y == 0 else (5 if y == height - 1 else (4 if y == height - 2 else mini(y, 3)))
+				var post := (POST_LEFT if x == 0 else POST_RIGHT) + shade + Vector2i(0, post_row)
+				_set_tile(decor if y == height - 1 else canopy, cell, post)
+			elif y == height - 1:
+				_set_tile(decor, cell, WALL_WINDOW + shade)
+			else:
+				_set_tile(canopy, cell, ROOF + shade + Vector2i(0, 0 if y == 0 else (4 if y == height - 2 else 3)))
+	solid_rects.append(Rect2i(corner, Vector2i(width, height)))
+
+
+## Shelves along the back wall, a rug inside the door and a jar or two: a shop's inside.
+func _furnish_shop(decor: TileMapLayer, house: Dictionary) -> void:
+	var rect: Rect2i = house["rect"]
+	var inner := rect.size.x - 2
+	for x in range(1, inner + 1):
+		if x % 3 != 0:
+			_place_tiles(decor, rect.position + Vector2i(x, 1), {"origin": _pick(SHELVES), "size": Vector2i(1, 2)})
+	var door_x: int = house["door"].x - rect.position.x
+	_place_tiles(decor, rect.position + Vector2i(door_x - 1, rect.size.y - 3), RUG)
+	_set_tile(decor, rect.position + Vector2i(1, rect.size.y - 2), _pick(JARS))
+	_set_tile(decor, rect.position + Vector2i(inner, rect.size.y - 2), _pick(JARS))
+
+
+## A fence around `rect` with a 2-tile gate in the middle of its bottom (or top) side.
+func _fence_rect(decor: TileMapLayer, rect: Rect2i, gate_on_top := false) -> void:
+	var gate := [rect.size.x / 2 - 1, rect.size.x / 2]
+	for x in rect.size.x:
+		for y in rect.size.y:
+			var cell := rect.position + Vector2i(x, y)
+			_blocked[cell] = true # nothing grows inside
+			var last_x := x == rect.size.x - 1
+			var last_y := y == rect.size.y - 1
+			var gate_row := (y == 0) == gate_on_top
+			var piece := Vector2i(-1, -1)
+			if y == 0 or last_y:
+				if x == 0:
+					piece = FENCE_TOP_LEFT if y == 0 else FENCE_BOTTOM_LEFT
+				elif last_x:
+					piece = FENCE_TOP_RIGHT if y == 0 else FENCE_BOTTOM_RIGHT
+				elif gate_row and gate.has(x):
+					continue # opening to walk in
+				elif gate_row and gate.has(x + 1):
+					piece = FENCE_RIGHT # end posts either side of the gate
+				elif gate_row and gate.has(x - 1):
+					piece = FENCE_LEFT
+				else:
+					piece = FENCE_MIDDLE
+			elif x == 0 or last_x:
+				piece = FENCE_SIDE
+			if piece.x >= 0:
+				_set_tile(decor, cell, piece)
+
+
+## A dirt path through `points` (tiles; halves are fine). smooth = a curve through them,
+## otherwise straight lines. radius: 0.71 = one tile wide, 0.8 = a footpath, 1.05 = a road.
+## wobble: long stretches get extra bends, this many tiles to either side.
+func _trail(layers: Dictionary, points: Array, radius := 0.8, smooth := true, wobble := 0.0) -> void:
+	var pts: Array[Vector2] = []
+	for i in points.size():
+		var p := Vector2(points[i])
+		if wobble > 0.0 and i > 0:
+			var prev := Vector2(points[i - 1])
+			var extra := int(prev.distance_to(p) / 9.0)
+			var side := (p - prev).orthogonal().normalized()
+			for k in range(1, extra + 1):
+				pts.append(prev.lerp(p, float(k) / (extra + 1)) + side * _rng.randf_range(-wobble, wobble))
+		pts.append(p)
+	var reach := int(ceil(radius))
+	for i in pts.size() - 1:
+		var a := pts[i]
+		var b := pts[i + 1]
+		var steps := maxi(2, int(a.distance_to(b) * 4.0))
+		for s in steps + 1:
+			var t := float(s) / steps
+			var p := a.lerp(b, t)
+			if smooth:
+				p = a.cubic_interpolate(b, pts[maxi(i - 1, 0)], pts[mini(i + 2, pts.size() - 1)], t)
+			var base := Vector2i(roundi(p.x), roundi(p.y))
+			for oy in range(-reach, reach + 1):
+				for ox in range(-reach, reach + 1):
+					var cell := base + Vector2i(ox, oy)
+					if Vector2(cell).distance_to(p) <= radius:
+						_paint_path(layers["ground"], layers["decor"], cell)
+
+
+## Puts a prop down: a multi-tile object (a Dictionary) or a single tile from the tileset.
+## Skipped where there's a house, water or a cliff.
+func _prop(layers: Dictionary, cell: Vector2i, thing: Variant) -> void:
+	var ground: TileMapLayer = layers["ground"]
+	var size: Vector2i = thing["size"] if thing is Dictionary else Vector2i.ONE
+	for ox in size.x:
+		for oy in size.y:
+			var c := cell + Vector2i(ox, oy)
+			if WATER_TILES.has(ground.get_cell_atlas_coords(c)) or _is_face(c):
+				return
+			for house in houses:
+				if house["rect"].has_point(c):
+					return
+	if thing is Dictionary:
+		_place_object(layers["decor"], layers["canopy"], cell, thing)
+	else:
+		_set_tile(layers["decor"], cell, thing)
+		_blocked[cell] = true
+
+
+## Everything standing around the village's buildings: the statue, the notice board, the
+## well, signs, barrels, crates, pots, a garden, hay and troughs. Placed after the paths.
+func _dress_village(layers: Dictionary) -> void:
+	var c := location_center("village")
+	var decor: TileMapLayer = layers["decor"]
+	var put := func(offset: Vector2i, thing: Variant) -> void: _prop(layers, c + offset, thing)
+	# The plaza
+	put.call(Vector2i(-1, -4), STATUE)
+	put.call(Vector2i(-4, -5), NOTICE_BOARD)
+	put.call(Vector2i(6, -4), ROOFED_WELL)
+	for offset in [Vector2i(-2, -1), Vector2i(1, -1), Vector2i(-2, -2), Vector2i(1, -2)]:
+		put.call(offset, _pick(FLOWER_BEDS)) # flowers round the statue's base
+	put.call(Vector2i(-6, -3), BARREL_LAMP)
+	put.call(Vector2i(2, 3), BARREL_LAMP)
+	# The market: stall tables beside the merchant's crates, sacks of seed
+	put.call(Vector2i(-8, 3), MARKET_TABLES)
+	put.call(Vector2i(-3, 4), GRAIN_SACK)
+	put.call(Vector2i(-7, 5), GRAIN_SACK)
+	# Town hall and tavern, up on the terrace
+	put.call(Vector2i(-9, -14), BARREL_OPEN)
+	put.call(Vector2i(-9, -13), BARREL_SHUT)
+	put.call(Vector2i(-8, -13), KEG)
+	put.call(Vector2i(-8, -17), CRATE_STACK)
+	put.call(Vector2i(-18, -13), BARREL_LAMP)
+	put.call(Vector2i(-16, -11), BARREL_SHUT)
+	put.call(Vector2i(-15, -11), KEG)
+	put.call(Vector2i(-7, -10), POTS[0])
+	put.call(Vector2i(5, -11), POTS[1])
+	put.call(Vector2i(5, -12), _pick(FLOWER_BEDS))
+	# The houses beside the hall
+	put.call(Vector2i(6, -10), POTS[2])
+	put.call(Vector2i(7, -10), _pick(FLOWER_BEDS))
+	put.call(Vector2i(8, -10), _pick(FLOWER_BEDS))
+	put.call(Vector2i(15, -12), KEG)
+	put.call(Vector2i(19, -12), POTS[0])
+	put.call(Vector2i(12, -14), CRATE_PILE)
+	# Seed shop: its sign, sacks and crates along the wing
+	_sign(layers, houses[10], SIGN_SEEDS, -2)
+	put.call(Vector2i(-19, 9), CRATE_PILE)
+	put.call(Vector2i(-17, 9), GRAIN_SACK)
+	put.call(Vector2i(-16, 9), POTS[1])
+	put.call(Vector2i(-8, 6), GRAIN_SACK)
+	# General store: sign, crates stacked beside it, barrels on the plaza side
+	_sign(layers, houses[11], SIGN_STORE, 2)
+	put.call(Vector2i(17, -1), CRATE_STACK)
+	put.call(Vector2i(18, 2), KEG)
+	put.call(Vector2i(8, -3), BARREL_SHUT)
+	put.call(Vector2i(8, -2), KEG)
+	put.call(Vector2i(16, 3), POTS[0])
+	# Houses round the plaza
+	put.call(Vector2i(-12, -2), KEG)
+	put.call(Vector2i(-12, -3), POTS[2])
+	put.call(Vector2i(-21, -3), CRATE_PILE)
+	put.call(Vector2i(4, 13), BARREL_WATER)
+	put.call(Vector2i(14, 13), KEG)
+	put.call(Vector2i(15, 13), POTS[1])
+	put.call(Vector2i(18, 11), CRATE_STACK_SHUT)
+	put.call(Vector2i(27, 7), CAMPFIRE)
+	# Rosa's kitchen garden, fenced, left of her house
+	var garden := Rect2i(c + Vector2i(-8, 9), Vector2i(6, 5))
+	var free := true
+	for x in range(garden.position.x, garden.end.x):
+		for y in range(garden.position.y, garden.end.y):
+			if _blocked.has(Vector2i(x, y)):
+				free = false
+	if free:
+		_fence_rect(decor, garden)
+		for x in range(1, 5):
+			for y in range(1, 4):
+				_set_tile(decor, garden.position + Vector2i(x, y), Vector2i(49 + _rng.randi_range(1, 9), 14 + y))
+	# The smithy: sign, an ore pile and spare crates round the yard
+	_sign(layers, houses[8], SIGN_SMITHY, -2)
+	put.call(Vector2i(-20, -8), BOULDERS[2])
+	put.call(Vector2i(-20, -6), SMALL_ROCKS[1])
+	put.call(Vector2i(-27, -11), CRATE_STACK_SHUT)
+	put.call(Vector2i(-34, -3), KEG)
+	# The ranch: sign, hay and sacks by the barn, a trough and hay in each pasture
+	_sign(layers, houses[12], SIGN_RANCH, -2)
+	put.call(Vector2i(-34, 13), HAY_BALE)
+	put.call(Vector2i(-34, 14), HAY_BALE)
+	put.call(Vector2i(-33, 15), GRAIN_SACK)
+	put.call(Vector2i(-23, 16), BARREL_WATER)
+	put.call(Vector2i(-22, 16), KEG)
+	for pasture in pastures:
+		_place_tiles(decor, pasture.position + Vector2i(2, 1), TROUGH)
+		_place_object(decor, layers["canopy"], pasture.position + Vector2i(pasture.size.x - 4, pasture.size.y - 3), HAY_BALE)
+	# Keep the doorsteps clear of trees
+	for house in houses:
+		for x in range(-1, 2):
+			for y in range(1, 3):
+				_blocked[house["door"] + Vector2i(x, y)] = true
+
+
+## A shop sign beside a door: the post on the ground, the board up against the wall.
+func _sign(layers: Dictionary, house: Dictionary, sign: Dictionary, side: int) -> void:
+	_place_object(layers["decor"], layers["canopy"], house["door"] + Vector2i(side, 0), sign)
 
 
 # --- Levels: heights, cliffs, ladders, ramps and waterfalls -----------------------
@@ -1256,7 +1624,6 @@ func _add_plateau(_ground: TileMapLayer, _overlay: TileMapLayer, rect: Rect2i, p
 
 ## Cottages and lookout towers around the island, on free ground (and some in the village).
 func _place_small_buildings(layers: Dictionary) -> void:
-	small_buildings.clear()
 	var wanted := [[COTTAGE, COTTAGE_COUNT], [TOWER, TOWER_COUNT]]
 	for entry in wanted:
 		var obj: Dictionary = entry[0]
@@ -1339,6 +1706,20 @@ func _setup_small_building_walls() -> void:
 		walls.add_child(collision)
 
 
+## The wings of L-shaped houses are solid, apart from their top row (you can step behind the roof).
+func _setup_solid_rects() -> void:
+	var walls := StaticBody2D.new()
+	walls.name = "WingWalls"
+	add_child(walls)
+	for rect in solid_rects:
+		var shape := RectangleShape2D.new()
+		shape.size = Vector2(rect.size.x * 16 - 4, (rect.size.y - 1) * 16 - 4)
+		var collision := CollisionShape2D.new()
+		collision.shape = shape
+		collision.position = cell_to_world(rect.position) - Vector2(8, 8) + Vector2(rect.size.x * 8, 16 + (rect.size.y - 1) * 8)
+		walls.add_child(collision)
+
+
 ## Invisible walls along every cliff: over the rock faces (and waterfalls) except where a
 ## ladder or path goes through, and thin ones along the top and sides of every higher area.
 ## Built when the game starts, from the heights.
@@ -1382,16 +1763,39 @@ func _setup_cliff_walls() -> void:
 				add_wall.call(Rect2(top_left + Vector2(13, 0), Vector2(3, 16)))
 
 
-func _make_roads(ground: TileMapLayer, decor: TileMapLayer, plaza: Vector2i) -> void:
+## The roads between places: curves through a few points each, no straight runs or
+## square corners. The farm road crosses the river on a straight bridge.
+func _make_roads(layers: Dictionary, plaza: Vector2i) -> void:
 	var home := home_spawn_cell()
 	var lake := location_center("lake")
 	var lake_radius: Vector2 = LOCATIONS["lake"]["radius"]
-	var north := Vector2i(plaza.x + 24, int(_forest_edge(plaza.x + 24)) + 1)
-	_carve_road(ground, decor, home, plaza + Vector2i(-7, 0)) # farm -> village
-	_carve_road(ground, decor, plaza + Vector2i(6, 1), lake - Vector2i(0, int(lake_radius.y) - 1)) # village -> lake
-	_carve_road(ground, decor, plaza + Vector2i(6, 1), plaza + Vector2i(24, 1)) # east, past the upper village
-	_carve_road(ground, decor, plaza + Vector2i(24, 1), north) # village -> forest
-	_carve_road(ground, decor, home + Vector2i(0, 2), location_center("meadow")) # farm -> meadow
+	var c := plaza
+	var f := Vector2(c)
+	# Farm -> village: down to the bridge, then winding in past the smithy to the plaza's west side
+	var west: Array = [home, home + Vector2i(6, -3)]
+	var bridge_y := c.y + 3
+	var banks := Vector2i(-1, -1) # first and last river tile on the bridge's row
+	for x in range(home.x, c.x):
+		if _river.has(Vector2i(x, bridge_y)):
+			if banks.x < 0:
+				banks.x = x
+			banks.y = x
+	if banks.x >= 0:
+		west.append(Vector2i(banks.x - 3, bridge_y))
+		_trail(layers, west, 1.05, true, 1.0)
+		_trail(layers, [Vector2i(banks.x - 3, bridge_y), Vector2i(banks.y + 3, bridge_y)], 1.05, false)
+		west = [Vector2i(banks.y + 3, bridge_y)]
+	west.append_array([f + Vector2(-28, 1.2), f + Vector2(-21, -0.2), f + Vector2(-14, 0.4), f + Vector2(-7, 0)])
+	_trail(layers, west, 1.05)
+	# Village -> lake: out of the plaza's south side, between the houses, curving down to the dock
+	_trail(layers, [f + Vector2(4, 4), f + Vector2(5.5, 8), f + Vector2(6, 13), f + Vector2(9, 18), f + Vector2(16, 23),
+		f + Vector2(23, 27), lake - Vector2i(0, int(lake_radius.y) - 1)], 1.05, true, 0.8)
+	# East past the general store, then north round the end of the terrace into the pines
+	var north := Vector2i(c.x + 24, int(_forest_edge(c.x + 24)) + 1)
+	_trail(layers, [f + Vector2(7, 1.5), f + Vector2(10, 3.8), f + Vector2(16, 4.3), f + Vector2(22, 4.5), f + Vector2(25.5, 3),
+		f + Vector2(26.5, -3), f + Vector2(25.5, -10), f + Vector2(24.5, -18), north], 1.05, true, 1.0)
+	# Farm -> meadow
+	_trail(layers, [home + Vector2i(0, 2), home + Vector2i(-4, 8), location_center("meadow")], 1.05, true, 2.5)
 
 
 ## Where a road squeezed past a corner (a house, a pond) two path tiles may only touch
@@ -1444,25 +1848,6 @@ func _nearest_path_below(ground: TileMapLayer, from: Vector2i, radius: int) -> V
 	return best
 
 
-## A 2-tile-wide road that wanders from a to b.
-func _carve_road(ground: TileMapLayer, decor: TileMapLayer, a: Vector2i, b: Vector2i) -> void:
-	var p := a
-	for step in 2000:
-		for offset in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
-			_paint_path(ground, decor, p + offset)
-		if p == b:
-			return
-		var d := b - p
-		# Step along x or y, more often along the longer distance, with a little wobble
-		var along_x := _rng.randf() < float(absi(d.x)) / float(absi(d.x) + absi(d.y))
-		if _rng.randf() < 0.12:
-			along_x = not along_x
-		if along_x:
-			p.x += signi(d.x) if d.x != 0 else _rng.randi_range(-1, 1)
-		else:
-			p.y += signi(d.y) if d.y != 0 else _rng.randi_range(-1, 1)
-
-
 func _make_pond(ground: TileMapLayer) -> void:
 	for attempt in 40:
 		var size := Vector2i(_rng.randi_range(4, 7), _rng.randi_range(3, 5))
@@ -1502,13 +1887,22 @@ func _decorate_water(ground: TileMapLayer, shore: TileMapLayer, sides: TileMapLa
 				continue
 			var n: bool = is_water.call(cell + Vector2i(0, -1))
 			var s: bool = is_water.call(cell + Vector2i(0, 1))
+			var w: bool = is_water.call(cell + Vector2i(-1, 0))
+			var e: bool = is_water.call(cell + Vector2i(1, 0))
+			# Outer corners are rounded off with the pack's diagonal shore pieces (earth above
+			# a north shore, sand beside a beach, grass below), instead of two edges meeting square
+			if n != s and w != e:
+				var beach := _sand.has(cell + Vector2i(0, -1 if not n else 1)) or _sand.has(cell + Vector2i(-1 if not w else 1, 0))
+				if not (beach and n):
+					_set_tile(shore, cell, Vector2i(19 if not w else 21, (5 if beach else 2) if not n else 4))
+					continue
 			if not n:
 				_set_tile(shore, cell, _pick(SHORE_N))
 			elif not s:
 				_set_tile(shore, cell, _pick(SHORE_S))
-			if not is_water.call(cell + Vector2i(-1, 0)):
+			if not w:
 				_set_tile(sides, cell, SHORE_W)
-			elif not is_water.call(cell + Vector2i(1, 0)):
+			elif not e:
 				_set_tile(sides, cell, SHORE_E)
 			elif n and s and sin(x * 0.9) + sin(y * 1.3 + x * 0.4) > 0.9:
 				_set_tile(shore, cell, _pick(WATER_FLECKS)) # ripples in patches; the rest stays smooth
@@ -1586,9 +1980,15 @@ func _setup_collision(tile_set: TileSet) -> void:
 					source.create_tile(coords)
 	var rects := COLLISION_RECTS.duplicate()
 	rects.merge(FURNITURE_RECTS)
+	_add_collision_rects(source, rects)
+	if tile_set.has_source(PROPS_SOURCE):
+		_add_collision_rects(tile_set.get_source(PROPS_SOURCE) as TileSetAtlasSource, PROPS_COLLISION)
+
+
+func _add_collision_rects(source: TileSetAtlasSource, rects: Dictionary) -> void:
 	for coords in rects:
 		if not source.has_tile(coords):
-			continue
+			source.create_tile(coords)
 		var data := source.get_tile_data(coords, 0)
 		while data.get_collision_polygons_count(0) > 0:
 			data.remove_collision_polygon(0, 0)
@@ -1649,29 +2049,87 @@ func _get_or_create_roofs(ground: TileMapLayer) -> TileMapLayer:
 	return roofs
 
 
+## Trees, bushes, flowers and rocks. Outside the forest they come in clumps (from smooth
+## noise): groves of leafy trees with bushes round their edges, flower patches, rock
+## fields, and open glades in between. The village's spare ground is planted thickly.
 func _scatter_objects(decor: TileMapLayer, canopy: TileMapLayer) -> void:
+	var ground := get_node("Ground") as TileMapLayer
+	var groves := FastNoiseLite.new()
+	groves.seed = _rng.randi()
+	groves.frequency = GROVE_SCALE
+	var stones := FastNoiseLite.new()
+	stones.seed = _rng.randi()
+	stones.frequency = GROVE_SCALE * 1.5
+	var bushes: Array = [BIG_OBJECTS[0], BIG_OBJECTS[0], BIG_OBJECTS[1], BIG_OBJECTS[2]]
 	for y in map_height:
 		for x in map_width:
 			var cell := Vector2i(x, y)
 			if _blocked.has(cell):
 				continue
 			var roll := _rng.randf()
+			var grove := groves.get_noise_2d(x, y)
 			match location_at(cell):
-				"farm", "village":
+				"farm":
 					if roll < 0.01:
 						_place_small(decor, cell, FLOWERS)
+				"village":
+					var by_path := false
+					for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+						if PATH_TILES.has(ground.get_cell_atlas_coords(cell + d)):
+							by_path = true
+					if by_path: # flowers and low bushes line the paths
+						if roll < 0.22:
+							_place_small(decor, cell, FLOWER_BEDS)
+						elif roll < 0.3:
+							_place_small(decor, cell, SMALL_BUSHES)
+					elif roll < (0.5 if grove > -0.05 else 0.14):
+						_try_place_big(decor, canopy, cell, _pick(ROUND_TREES), 0)
+					elif roll < 0.6:
+						_try_place_big(decor, canopy, cell, _pick(bushes), 0)
+					elif roll < 0.72:
+						_place_small(decor, cell, SMALL_BUSHES)
+					elif roll < 0.86:
+						_place_small(decor, cell, FLOWER_BEDS)
+					elif roll < 0.88:
+						_place_small(decor, cell, SMALL_ROCKS)
 				"meadow":
 					if roll < 0.025:
 						_try_place_big(decor, canopy, cell, BIG_OBJECTS[_pick(FRUIT_BUSHES)], 1)
 					elif roll < 0.2:
 						_place_small(decor, cell, FLOWERS)
 				"forest":
-					if roll < 0.3:
+					if stones.get_noise_2d(x, y) > 0.45 and roll < 0.12:
+						_try_place_big(decor, canopy, cell, _pick(BOULDERS), 0)
+					elif roll < 0.3:
 						_try_place_big(decor, canopy, cell, BIG_OBJECTS[_pick(PINES)], 0)
 					elif roll < 0.36:
 						_place_small(decor, cell, FOREST_DECOR)
 				_: # lake shore and open countryside
-					if roll < tree_density:
+					if stones.get_noise_2d(x, y) > 0.42: # a rock field
+						if roll < 0.1:
+							_try_place_big(decor, canopy, cell, _pick(BOULDERS), 0)
+						elif roll < 0.32:
+							_place_small(decor, cell, SMALL_ROCKS)
+					elif grove > 0.07: # inside a grove: trees shoulder to shoulder
+						if roll < 0.34:
+							_try_place_big(decor, canopy, cell, _pick(ROUND_TREES), 0)
+						elif roll < 0.42:
+							_try_place_big(decor, canopy, cell, BIG_OBJECTS[_pick(PINES)], 0)
+						elif roll < 0.5:
+							_place_small(decor, cell, SMALL_BUSHES)
+					elif grove > -0.06: # its fringe: bushes and undergrowth
+						if roll < 0.07:
+							_try_place_big(decor, canopy, cell, _pick(bushes), 0)
+						elif roll < 0.2:
+							_place_small(decor, cell, SMALL_BUSHES)
+						elif roll < 0.27:
+							_place_small(decor, cell, FLOWER_BEDS)
+					elif grove < -0.3: # a flower patch
+						if roll < 0.3:
+							_place_small(decor, cell, FLOWER_BEDS)
+						elif roll < 0.33:
+							_try_place_big(decor, canopy, cell, BIG_OBJECTS[_pick(FRUIT_BUSHES)], 0)
+					elif roll < tree_density: # glades: the odd tree and bits and pieces
 						_try_place_big(decor, canopy, cell, _pick(BIG_OBJECTS), 1)
 					elif roll < tree_density + decor_density:
 						_place_small(decor, cell, SMALL_DECOR)
@@ -1705,12 +2163,16 @@ func _place_object(decor: TileMapLayer, canopy: TileMapLayer, cell: Vector2i, ob
 	var size: Vector2i = obj["size"]
 	var origin: Vector2i = obj["origin"]
 	var solid_rows: int = obj.get("solid_rows", 1)
+	var source_id: int = obj.get("source", SOURCE_ID)
+	var source := decor.tile_set.get_source(source_id) as TileSetAtlasSource
 	for ox in size.x:
 		for oy in size.y:
 			var offset := Vector2i(ox, oy)
+			if not source.has_tile(origin + offset):
+				source.create_tile(origin + offset)
 			# Bottom rows (trunk, walls) go on Decor, everything above on Canopy
 			var layer: TileMapLayer = decor if oy >= size.y - solid_rows else canopy
-			layer.set_cell(cell + offset, SOURCE_ID, origin + offset)
+			layer.set_cell(cell + offset, source_id, origin + offset)
 			_blocked[cell + offset] = true
 
 
@@ -1925,6 +2387,8 @@ func location_name_at(world_pos: Vector2) -> String:
 		if Rect2i(rect.position + Vector2i(1, 1), rect.size - Vector2i(2, 1)).has_point(cell):
 			if i == 0:
 				return "Home"
+			if houses[i].has("name"):
+				return houses[i]["name"]
 			if _house_owners.has(i):
 				return "%s's House" % _house_owners[i]
 	return location_name(location_at(cell))
@@ -1945,12 +2409,13 @@ func _setup_houses() -> void:
 		var roof := TileMapLayer.new()
 		roof.tile_set = shared.tile_set
 		roof.collision_enabled = false
-		for x in range(rect.position.x, rect.end.x):
-			for y in range(rect.position.y, rect.end.y):
-				var c := Vector2i(x, y)
-				if shared.get_cell_source_id(c) != -1:
-					roof.set_cell(c, SOURCE_ID, shared.get_cell_atlas_coords(c))
-					shared.erase_cell(c)
+		for part in [rect, house.get("roof_extra", Rect2i())]: # the roof, and a second tier above it
+			for x in range(part.position.x, part.end.x):
+				for y in range(part.position.y, part.end.y):
+					var c := Vector2i(x, y)
+					if shared.get_cell_source_id(c) != -1:
+						roof.set_cell(c, SOURCE_ID, shared.get_cell_atlas_coords(c))
+						shared.erase_cell(c)
 		add_child(roof)
 		move_child(roof, shared.get_index() + 1)
 		_roofs.append(roof)
@@ -2663,6 +3128,29 @@ func _spawn_ranch() -> void:
 	var player := get_node_or_null("Player")
 	if player:
 		move_child(ranch, player.get_index()) # animals walk under the player
+
+
+## The village ranch's livestock: cows and sheep in one pasture, pigs and chickens in the other.
+## They only potter about (your own animals live in the pen by your house).
+func _spawn_pasture_animals() -> void:
+	var herds := [
+		["spr_deco_cow_strip4.png", "spr_deco_cow_strip4.png", "spr_deco_cow_strip4.png", "spr_deco_sheep_01_strip4.png", "spr_deco_sheep_01_strip4.png"],
+		["spr_deco_pig_01_strip4.png", "spr_deco_pig_01_strip4.png", "spr_deco_chicken_01_strip4.png", "spr_deco_chicken_01_strip4.png", "spr_deco_chicken_01_strip4.png"],
+	]
+	var player := get_node_or_null("Player")
+	for i in pastures.size():
+		var inside := Rect2i(pastures[i].position + Vector2i(1, 2), pastures[i].size - Vector2i(2, 3))
+		var area := Rect2(cell_to_world(inside.position) - Vector2(4, 4), Vector2(inside.size * 16) - Vector2(8, 8))
+		for strip in herds[i % herds.size()]:
+			var animal := Node2D.new()
+			animal.set_script(load("res://scripts/animal.gd"))
+			animal.strip = load(ANIMAL_STRIPS + strip)
+			animal.pen = area
+			animal.speed = 14.0 if strip.contains("chicken") else 8.0
+			animal.position = to_local(Vector2(randf_range(area.position.x, area.end.x), randf_range(area.position.y, area.end.y)))
+			add_child(animal)
+			if player:
+				move_child(animal, player.get_index()) # under the player, like the farm's animals
 
 
 ## The shipping bin: a crate just outside your front door (see shipping_bin.gd).

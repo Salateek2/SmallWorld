@@ -36,8 +36,9 @@ extends RefCounted
 ##   (morning until 11, day until 5 PM, evening until 10 PM, then night). One line per chat.
 
 ## Everyone on the island.
-##   home        which house is theirs (0 = yours, 1-4 the upper street from the left,
-##               5-6 below the plaza, 7 the tavern, 8 the smithy). Shown when you walk in.
+##   home        which house is theirs (0 = yours, 1-2 on the terrace beside the town hall,
+##               3-6 around the plaza, 7 the tavern, 8 the smithy; 9-12 are the town hall,
+##               the shops and the ranch barn, see _make_village). Shown when you walk in.
 ##   Standing still:  place + offset (tiles from a location's center; "tavern" = in its hall)
 ##   Walking about:   routine = [[hour, stop], ...] with stops "home", "work", "tavern":
 ##       work   {"spot": lake_road / forest_road / market / plaza / meadow, "offset", "anim"
@@ -51,7 +52,7 @@ const NPCS := {
 	# and always angling for presents. Came on "the last ship", and nobody knows when.
 	"isla": {"name": "Isla", "hair": "longhair", "home": 6, "place": "tavern", "offset": Vector2i(8, 3), "reach": 56.0},
 	# Gus works at the anvil in the smithy yard; E opens his shop
-	"gus": {"name": "Gus", "hair": "bowlhair", "home": 8, "place": "village", "offset": Vector2i(-15, 8),
+	"gus": {"name": "Gus", "hair": "bowlhair", "home": 8, "place": "village", "offset": Vector2i(-26, -5),
 		"animation": "HAMMERING", "frames": Vector2i(14, 22), "turn_to_player": false, "shop": "res://scripts/smithy_shop.gd"},
 	# Old Tom fishes at the lake from dawn, and tells stories at the bar at night
 	"tom": {"name": "Old Tom", "hair": "shorthair", "hair_color": Color(0.95, 0.95, 1.0), "home": 5,

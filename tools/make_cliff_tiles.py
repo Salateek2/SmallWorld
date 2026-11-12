@@ -12,6 +12,7 @@ Layout, 16 px columns, 2 tiles tall (upper and lower half of the cliff face):
                row 0 = back-left corner, back edge, back-right corner
                row 1 = left side, (unused), right side
                The sides show a strip of rock (the ground drops away there too),
+               outer corners (back corners, the foot of each cliff end) are rounded,
                the back has a dark outline with a light grass highlight.
 
 Rocks are a Voronoi pattern that wraps around left-right, lit from the top-left,
@@ -106,10 +107,29 @@ def side_strip(tile, left, y_from, y_to):
             tile.putpixel((x, y), col)
 
 
+def round_corner(tile, left, top, cuts):
+    """Rounds a tile's outer corner: cuts[i] pixels are see-through on the i-th row from
+    that edge, and the rock that is left gets a dark outline along the curve."""
+    w, h = tile.size
+    cleared = set()
+    for j, cut in enumerate(cuts):
+        y = j if top else h - 1 - j
+        for i in range(cut):
+            x = i if left else w - 1 - i
+            tile.putpixel((x, y), CLEAR)
+            cleared.add((x, y))
+    for (cx, cy) in cleared:
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            x, y = cx + dx, cy + dy
+            if 0 <= x < w and 0 <= y < h and (x, y) not in cleared:
+                tile.putpixel((x, y), LINE)
+
+
 def end_piece(face, left):
     """A cliff end: the side rock strip carries on down the face."""
     tile = face.crop((0, 0, 16, H)).copy()
     side_strip(tile, left, 0, H)
+    round_corner(tile, left, False, [5, 3, 2, 1, 1])  # the foot of the cliff curves in
     return tile
 
 
@@ -141,13 +161,7 @@ def back_corner(left):
         if i >= SIDE:
             tile.putpixel((x, 0), LINE)
             tile.putpixel((x, 1), GRASS_LIGHT)
-    # Rounded outer corner: the outline cuts across, outside it is see-through
-    for y in range(3):
-        for i in range(3 - y):
-            tile.putpixel((i if left else 15 - i, y), CLEAR)
-        tile.putpixel(((3 - y) if left else 15 - (3 - y), y), LINE)
-    for i in range(1, SIDE):
-        tile.putpixel((i if left else 15 - i, 0 if i >= 3 else 3 - i), LINE)
+    round_corner(tile, left, True, [6, 4, 3, 2, 1, 1])
     return tile
 
 

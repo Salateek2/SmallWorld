@@ -25,6 +25,10 @@ extends RefCounted
 ##   Or "friends" (befriend "amount" villagers, 1 heart each), or "hearts_with": npc
 ##   (reach "amount" hearts with them), or just a "goal" to read (finished by a dialogue).
 ##
+##   Or "growing": plant and water "amount" crops.
+## OPENING: a new game sets the flag "farm_start": you wake on your farm and Hazel teaches you
+##   to farm first, then sends you to the village. Rules with "flag:farm_start" are that opening;
+##   the older rules under them (wake by the lake, Tom first) keep saves from before it working.
 ## PACING: the story is meant to take many days. Steps wait for the next day ("after:"),
 ## for crops to grow, for friendships to grow, and for evenings, so there's always time
 ## to farm in between. One story step a day is plenty.
@@ -60,7 +64,9 @@ const NPCS := {
 	# Hazel: grumpy old farmer, digs in the meadow
 	"hazel": {"name": "Hazel", "hair": "mophair", "hair_color": Color(0.75, 0.75, 0.8), "home": 1,
 		"routine": [[6.0, "home"], [7.0, "work"], [17.0, "tavern"], [21.0, "home"]],
-		"work": {"spot": "meadow", "anim": "DIG"}, "seat": Vector2i(7, 6)},
+		"work": {"spot": "meadow", "anim": "DIG"}, "seat": Vector2i(7, 6),
+		# On the first morning she waits outside your door until she has taught you to farm
+		"waits": {"while": ["flag:farm_start", "!flag:farm_taught"], "offset": Vector2i(-2, 2)}},
 	# Bram the woodcutter, at the edge of the pines
 	"bram": {"name": "Bram", "hair": "shorthair", "hair_color": Color(0.55, 0.35, 0.25), "home": 2,
 		"routine": [[6.0, "home"], [8.0, "work"], [18.0, "tavern"], [23.5, "home"]],
@@ -270,11 +276,15 @@ const SMALL_TALK := {
 const TALK := {
 	# Heart events: something personal once you're friends (each happens once)
 	"tom": [
+		{"if": ["flag:farm_start", "!flag:met_tom"], "say": "tom_hello_farm"},
 		{"if": "quest:wake", "say": "tom_hello"},
 		{"if": ["hearts:tom:2", "!flag:tom_h2"], "say": "tom_h2"},
 	],
 	"pip": [{"if": ["hearts:pip:2", "!flag:pip_h2"], "say": "pip_h2"}],
 	"hazel": [
+		{"if": "quest:meet_hazel", "say": "hazel_wake"},
+		{"if": "ready:first_plot", "say": "hazel_planted"},
+		{"if": "quest:first_plot", "say": "hazel_plot_waiting"},
 		{"if": "quest:see_hazel", "say": "hazel_seeds"},
 		{"if": ["hearts:hazel:2", "!flag:hazel_h2"], "say": "hazel_h2"},
 	],
@@ -286,6 +296,9 @@ const TALK := {
 	],
 	# Chapter 1 runs through Isla: each step she gives you the next one
 	"isla": [
+		{"if": ["flag:farm_start", "!flag:farm_taught"], "say": "isla_not_yet"},
+		{"if": ["flag:farm_start", "quest:find_isla"], "say": "isla_hello_farm"},
+		{"if": ["flag:farm_start", "ready:firewood"], "say": "isla_firewood_done_farm"},
 		{"if": "quest:find_isla", "say": "isla_hello"},
 		{"if": "!flag:met_isla", "say": "isla_hello"},
 		{"if": "ready:firewood", "say": "isla_firewood_done"},
@@ -304,7 +317,56 @@ const TALK := {
 
 const DIALOGUE := {
 	# --- Intro and chapter 1: "A New Home" ---
-	"intro": {"lines": [], "do": ["clue:locket", "quest:wake"]},
+	"intro": {"lines": [], "do": ["clue:locket", "quest:meet_hazel"]},
+	"hazel_wake": {
+		"lines": [
+			["Hazel", "Hmph. You're awake. Found you face down in my meadow at dawn, holding that locket like it owed you money."],
+			["Hazel", "I'm Hazel. Dragged you here myself. This old farmhouse has stood empty for years, so it may as well be yours."],
+			["Hazel", "But nobody lies about on my watch. Here: my old hoe, my old watering can, and some seeds."],
+			["Hazel", "Found a whole sack of them on my doorstep, years ago. Never learned who left it. They grow like nothing else on this island."],
+			["Hazel", "Dig three tiles with the hoe. Put a seed in each. Water them. Go on, I'll watch."],
+		],
+		"do": ["finish:meet_hazel", "tool:hoe", "tool:water", "tool:seeds", "seeds:carrot:6", "clue:seeds", "quest:first_plot"],
+	},
+	"hazel_plot_waiting": {
+		"lines": [["Hazel", "Hoe first (2), then a seed in the soil (3), then water (4). Three of them. I haven't got all day. ...I have, actually."]],
+	},
+	"hazel_planted": {
+		"lines": [
+			["Hazel", "Hmph. Crooked rows. But they're in the ground."],
+			["Hazel", "Carrots take about three hours. They only grow while the soil is dark and wet, so water it again when it dries."],
+			["Hazel", "No use standing here watching them. Follow the road east to the village and find Isla at the tavern. She runs the place, and she'll have work for you."],
+			["Hazel", "And if you pass the lake, old Tom usually has a spare fishing rod. I'll be in my meadow. Don't drown the carrots."],
+		],
+		"do": ["finish:first_plot", "flag:farm_taught", "quest:find_isla"],
+	},
+	"tom_hello_farm": {
+		"lines": [
+			["Old Tom", "Well I'll be... a new face. You're the one Hazel found in the clover!"],
+			["Old Tom", "Haven't seen a new face since... huh. Since I can't remember."],
+			["Old Tom", "That's a pretty locket you're holding. Never seen that mark before. Or have I...?"],
+			["Old Tom", "Here, take my spare rod. Something to do while your carrots grow."],
+		],
+		"do": ["flag:met_tom", "tool:rod"],
+	},
+	"isla_not_yet": {"lines": [["Isla", "Oh! You must be Hazel's foundling. Shouldn't you be back at that farm? She hates waiting. Come see me after, darling."]]},
+	"isla_hello_farm": {
+		"lines": [
+			["Isla", "Oh! The new face. And new faces come with new pockets..."],
+			["Isla", "I'm Isla. I run the tavern. And, between you and me, most of Willowbrook."],
+			["Isla", "So Hazel's put you in the old farmhouse? Nobody's lived there for years. Keep it. Rent-free... for now."],
+			["Isla", "While your little carrots grow, bring me some firewood. Six logs, from the pines up north. There's coin in it for you."],
+		],
+		"do": ["finish:find_isla", "flag:met_isla", "quest:firewood"],
+	},
+	"isla_firewood_done_farm": {
+		"lines": [
+			["Isla", "My hero! Well... my firewood hero. That'll keep the fire going for days."],
+			["Isla", "Here's your pay. Don't spend it all in one tavern. ...Actually, do. Mine."],
+			["Isla", "Now, those carrots of yours. Bring me three when they're ripe and I'll buy them. At a fair price. Fair for me."],
+		],
+		"do": ["finish:firewood", "quest:first_harvest"],
+	},
 	"tom_hello": {
 		"lines": [
 			["Old Tom", "Easy now, easy. You were lying in the reeds like a lost boot."],
@@ -354,7 +416,7 @@ const DIALOGUE := {
 			["Hazel", "Fine. Take my old hoe and watering can. I've got better ones."],
 			["Hazel", "And these seeds. Found a whole sack of them on my doorstep, years ago."],
 			["Hazel", "Never figured out who left it. They grow like nothing else on this island."],
-			["Hazel", "Dig, plant, water every day. Three nights and you'll have carrots. Don't drown them."],
+			["Hazel", "Dig, plant, water. Three hours in wet soil and you'll have carrots. Don't drown them."],
 		],
 		"do": ["finish:see_hazel", "tool:hoe", "tool:water", "tool:seeds", "seeds:carrot:6", "clue:seeds", "quest:first_harvest"],
 	},
@@ -495,6 +557,13 @@ const DIALOGUE := {
 
 const QUESTS := {
 	# Chapter 1: "A New Home"
+	"meet_hazel": {"title": "A New Morning", "goal": "Talk to the woman outside your house"},
+	"first_plot": {
+		"title": "Green Thumbs",
+		"goal": "Dig (2), plant (3) and water (4) carrots",
+		"growing": true,
+		"amount": 3,
+	},
 	"wake": {"title": "Washed Ashore", "goal": "Talk to the old fisherman by the lake"},
 	"find_isla": {"title": "A Roof Overhead", "goal": "Find Isla at the tavern on the upper street"},
 	"firewood": {
@@ -506,7 +575,7 @@ const QUESTS := {
 		"reward": {"coins": 40},
 	},
 	"patience": {"title": "Patience", "goal": "Visit Isla again tomorrow"},
-	"see_hazel": {"title": "Roots", "goal": "Ask Hazel about farming (in the meadow)"},
+	"see_hazel": {"title": "Roots", "goal": "Ask Hazel about farming (follow the arrow)"},
 	"first_harvest": {
 		"title": "First Harvest",
 		"goal": "Grow 3 carrots for Isla",
@@ -549,4 +618,5 @@ const INTRO := [
 	"A boat, tossed like a leaf.",
 	"A light, somewhere in the fog...",
 	"...and then nothing at all.",
+	"Until the smell of wet earth, and a voice: \"Hmph.\"",
 ]

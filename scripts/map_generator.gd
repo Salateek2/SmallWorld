@@ -349,6 +349,7 @@ var _changes: Array = [] # trees felled and plants cut this game (saved, replaye
 ## The animal pen next to your house (fence included) and its trough
 @export_storage var pen_rect := Rect2i()
 @export_storage var trough_cell := Vector2i()
+var bin_cell := Vector2i(-1, -1) # where the shipping bin stands (set when the game starts)
 ## The smithy's furnace (its fire and chimney smoke are added when the game starts)
 @export_storage var forge_cell := Vector2i(-1, -1)
 ## Isla's tavern (the furniture and sign are added when the game starts)
@@ -394,6 +395,7 @@ func _ready() -> void:
 	_spawn_clouds()
 	_spawn_farm()
 	_spawn_ranch()
+	_spawn_shipping_bin()
 	_spawn_clock()
 	_spawn_merchant()
 	_spawn_story_characters()
@@ -404,7 +406,7 @@ func _ready() -> void:
 	if SaveGame.load_requested:
 		SaveGame.apply(self) # "Continue" on the title screen
 	elif SaveGame.intro_requested:
-		_start_intro.call_deferred() # "New Game": wake up by the lake
+		_start_intro.call_deferred() # "New Game": the intro, then you wake up on the farm
 
 
 func generate() -> void:
@@ -1898,6 +1900,8 @@ func is_farmable(cell: Vector2i) -> bool:
 	var tile := ground.get_cell_atlas_coords(cell)
 	if tile != GRASS and not GRASS_VARIANTS.has(tile):
 		return false
+	if cell == bin_cell:
+		return false # the shipping bin stands here
 	if decor and decor.get_cell_source_id(cell) != -1:
 		return false
 	if canopy and canopy.get_cell_source_id(cell) != -1:
@@ -2093,6 +2097,9 @@ func _spawn_clock() -> void:
 	var ranch := get_node_or_null("Ranch")
 	if ranch:
 		clock.new_day.connect(ranch.on_new_day)
+	var bin := get_node_or_null("ShippingBin")
+	if bin:
+		clock.new_day.connect(bin.on_new_day)
 	clock.new_day.connect(func(_day): Story.new_day()) # chats and presents again
 	var player := get_node_or_null("Player")
 	if player and player.has_method("on_passed_out"):
@@ -2372,7 +2379,11 @@ func _make_routine(info: Dictionary) -> Dictionary:
 			"lift": info.get("sit_lift", -9.0),
 			"face": info.get("seat_face", 1.0),
 		}
-	return {"schedule": info["routine"], "stops": stops}
+	var routine := {"schedule": info["routine"], "stops": stops}
+	if info.has("waits"): # stands by your front door while the story says so
+		stops["wait"] = {"cell": houses[0]["door"] + info["waits"]["offset"]}
+		routine["wait_while"] = info["waits"]["while"]
+	return routine
 
 
 ## Named places villagers work at.
@@ -2654,6 +2665,31 @@ func _spawn_ranch() -> void:
 		move_child(ranch, player.get_index()) # animals walk under the player
 
 
+## The shipping bin: a crate just outside your front door (see shipping_bin.gd).
+func _spawn_shipping_bin() -> void:
+	if houses.is_empty():
+		return
+	var ground := get_node("Ground") as TileMapLayer
+	var decor := get_node("Decor") as TileMapLayer
+	var door: Vector2i = houses[0]["door"]
+	bin_cell = door + Vector2i(2, 1)
+	# Right of the door if that tile is free, otherwise the next best spot
+	for offset in [Vector2i(2, 1), Vector2i(-2, 1), Vector2i(3, 1), Vector2i(-3, 1), Vector2i(2, 2), Vector2i(-2, 2)]:
+		var cell: Vector2i = door + offset
+		if decor.get_cell_source_id(cell) == -1 and not WATER_TILES.has(ground.get_cell_atlas_coords(cell)) \
+				and not pen_rect.has_point(cell):
+			bin_cell = cell
+			break
+	var bin := StaticBody2D.new()
+	bin.set_script(load("res://scripts/shipping_bin.gd"))
+	bin.name = "ShippingBin"
+	bin.position = to_local(cell_to_world(bin_cell))
+	add_child(bin)
+	var player := get_node_or_null("Player")
+	if player:
+		move_child(bin, player.get_index()) # drawn under the player
+
+
 func _spawn_farm() -> void:
 	var farm := Node2D.new()
 	farm.set_script(load("res://scripts/farm.gd"))
@@ -2699,13 +2735,9 @@ func _setup_world_bounds() -> void:
 func _start_intro() -> void:
 	SaveGame.intro_requested = false
 	var player := get_node_or_null("Player")
-	var tom := get_node_or_null("Old Tom")
 	if player == null:
 		return
-	if tom:
-		var spot: Vector2i = tom.routine["stops"]["work"]["cell"]
-		player.global_position = cell_to_world(_nearest_free(_grid, spot + Vector2i(-2, 0)))
-		player.set_camera_limits(_world_rect())
+	# You wake up in front of your farmhouse (where _place_player put you); Hazel is waiting
 	player._open_menu("res://scripts/story/intro.gd")
 
 

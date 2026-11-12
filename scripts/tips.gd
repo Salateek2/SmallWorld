@@ -14,7 +14,8 @@ const TIPS := [
 	["walk", "Walk with WASD or the arrow keys.\nKeep walking and you'll start to run."],
 	["quest", "Your current goal is shown in the top right corner."],
 	["zoom", "Zoom in and out with the mouse wheel\n(or the + and - keys)."],
-	["tools", "Pick a tool with the number keys 1-6 (or Q),\nthen press E to use it."],
+	["tools", "Pick a tool with the number keys 1-7 (or Q),\nthen press E to use it."],
+	["grow", "Crops only grow in wet (dark) soil. Face one to see\nhow long it needs. Soil dries after a few hours."],
 	["bag", "Press I (or Tab) to open your bag.\nPeople and clues are in there too."],
 	["friends", "Chat with people every day and bring them\npresents to become friends."],
 	["night", "It's getting late! Sleep in your bed to start\na new day. The game saves every morning."],
@@ -76,6 +77,9 @@ func _ready_to_show(id: String) -> bool:
 			return _played > 25.0
 		"tools":
 			return player.owned_tools.size() > 2
+		"grow":
+			var farm: Node = player.get_parent().get_node_or_null("Farm")
+			return farm != null and farm.has_crops()
 		"bag":
 			return player.wood > 0 or not player.crops.is_empty()
 		"friends":

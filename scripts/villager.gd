@@ -187,6 +187,9 @@ func _arrive() -> void:
 
 ## Which stop of the schedule we're in at this time of day.
 func _stop_now() -> String:
+	# The story can keep someone waiting in one place (Hazel at your farm on the first morning)
+	if routine.has("wait_while") and routine["wait_while"].all(func(c): return Story.check(c)):
+		return "wait"
 	var hour: float = _clock.minutes / 60.0
 	var stop: String = routine["schedule"][0][1]
 	for entry in routine["schedule"]:

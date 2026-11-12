@@ -316,7 +316,8 @@ func current_quest() -> String:
 
 
 ## How far along a quest is (capped at the amount needed): items you have for "item"
-## quests, villagers you're friends with (1+ heart) for "friends", hearts for "hearts_with".
+## quests, villagers you're friends with (1+ heart) for "friends", hearts for "hearts_with",
+## crops planted and watered for "growing".
 func quest_progress(id: String) -> int:
 	var quest: Dictionary = Text.QUESTS[id]
 	var have := 0
@@ -328,6 +329,9 @@ func quest_progress(id: String) -> int:
 				have += 1
 	elif quest.has("hearts_with"):
 		have = hearts(quest["hearts_with"])
+	elif quest.has("growing"): # crops planted and watered
+		var farm: Node = player.get_parent().get_node_or_null("Farm") if player else null
+		have = farm.count_growing() if farm else 0
 	return mini(have, quest.get("amount", 0))
 
 

@@ -1,18 +1,28 @@
 extends CanvasLayer
-## Gus's smithy: buy tools and weapons from the blacksmith.
+## Gus's smithy: buy tools, copper upgrades and sprinklers from the blacksmith.
+## Most of it unlocks with your farming level.
 ## Opened by talking to Gus (E) at his anvil. Built in code in the pack's pixel style.
 ## Click Buy (or arrow keys + Enter). Esc or E closes it.
 
 signal closed
 
 const UIStyle := preload("res://scripts/ui_style.gd")
+const Farm := preload("res://scripts/farm.gd")
 const UI := "res://assets/Sunnyside_World_Assets/UI/"
 const DARK_TEXT := Color(0.24, 0.16, 0.12)
 const SOFT_TEXT := Color(0.42, 0.3, 0.24)
 const CREAM := Color(1.0, 0.94, 0.82)
 
-## What Gus makes. tool = the player's Tool it gives (-1 = not ready yet)
+## What Gus makes. One of:  tool = the player's Tool it gives (-1 = not ready yet),
+## upgrade = the Tool it turns into copper (reaches 3 tiles), sprinkler = one more sprinkler.
+## level = farming level needed (1 if left out).
 const WARES := [
+	{"name": "Copper Hoe", "icon": "shovel.png", "price": 150, "upgrade": 1, "level": 2, # Tool.HOE
+		"text": "Digs three tiles in a row with one swing."},
+	{"name": "Copper Watering Can", "icon": "water.png", "price": 220, "upgrade": 3, "level": 3, # Tool.WATER
+		"text": "Waters three tiles in a row at once."},
+	{"name": "Sprinkler", "icon": Farm.SPRINKLER_ICON, "price": 120, "sprinkler": true, "level": 4,
+		"text": "Waters the 8 tiles around it every morning. Key 7 to place."},
 	{"name": "Iron Sword", "icon": "sword.png", "price": 60, "tool": 4, # Tool.SWORD
 		"text": "Slashes bushes and flowers, and keeps goblins at bay."},
 	{"name": "Pickaxe", "icon": "pickaxe.png", "price": 0, "tool": -1,
@@ -86,7 +96,9 @@ func _refresh() -> void:
 		row.add_child(line)
 
 		var icon := TextureRect.new()
-		icon.texture = load(UI + ware["icon"])
+		icon.texture = load(ware["icon"] if ware["icon"].begins_with("res://") else UI + ware["icon"])
+		if ware.has("upgrade"):
+			icon.modulate = Color(1.0, 0.72, 0.5) # copper
 		icon.custom_minimum_size = Vector2(40, 40)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -102,9 +114,15 @@ func _refresh() -> void:
 
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(120, 0)
-		var owned: bool = ware["tool"] >= 0 and player.owned_tools.has(ware["tool"])
-		if ware["tool"] < 0:
+		var owned: bool = player.owned_tools.has(ware.get("tool", -1)) or player.upgrades.has(ware.get("upgrade", -1))
+		if ware.get("tool", 0) < 0:
 			button.text = "Soon"
+			button.disabled = true
+		elif player.level() < ware.get("level", 1):
+			button.text = "Farm Lv %d" % ware["level"]
+			button.disabled = true
+		elif ware.has("upgrade") and not player.owned_tools.has(ware["upgrade"]):
+			button.text = "No tool" # nothing to upgrade yet
 			button.disabled = true
 		elif owned:
 			button.text = "Owned"
@@ -122,7 +140,14 @@ func _buy(ware: Dictionary) -> void:
 		return
 	player.coins -= ware["price"]
 	Juice.sound("confirm")
-	player.give_tool(ware["tool"])
+	if ware.has("upgrade"):
+		player.upgrades.append(ware["upgrade"])
+		player.give_tool(ware["upgrade"]) # puts it in your hand
+	elif ware.has("sprinkler"):
+		player.sprinklers += 1
+		player.give_tool(6) # Tool.SPRINKLER
+	else:
+		player.give_tool(ware["tool"])
 	player.notify("Gus hands you the %s!" % ware["name"].to_lower())
 	_refresh()
 

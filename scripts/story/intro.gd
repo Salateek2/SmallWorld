@@ -1,6 +1,6 @@
 extends CanvasLayer
 ## SmallWorld intro (New Game only): white lines of text on black, one after another,
-## then the black fades away and you're lying by the lake. Any key skips it.
+## then the black fades away and you wake up outside your farmhouse. Any key skips it.
 ## The lines are INTRO in story_text.gd; when it's over the "intro" dialogue's actions
 ## run (the locket clue, the first quest).
 

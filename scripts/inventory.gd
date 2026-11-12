@@ -134,16 +134,15 @@ func _collect(tab: int) -> Array[Dictionary]:
 					var data: Dictionary = Farm.CROP_DATA[crop]
 					list.append({"name": "%s seeds" % crop.capitalize(), "kind": "Seeds", "count": count,
 						"icon": Farm.crop_texture(crop, 0), "seed": crop,
-						"text": "Plant on dug soil and water every day.\nRipe in %d days." % data["nights"]})
+						"text": "Plant on dug soil and keep it watered.\nRipe in %d hours." % data["hours"]})
 		Tab.TOOLS:
 			for t in player.Tool.size():
 				if not player.owned_tools.has(t):
 					continue # only tools you actually have
 				var info := {"name": player.TOOL_NAMES[t], "kind": "Tool  (key %d)" % (t + 1), "tool": t,
 					"text": TOOL_TEXT[t], "count": 0}
-				if player.TOOL_ICONS.has(t):
-					info["icon"] = load(UI + player.TOOL_ICONS[t])
-				else:
+				info["icon"] = player.tool_icon(t)
+				if info["icon"] == null: # seeds: show the crop
 					info["icon"] = Farm.crop_texture(Farm.CROP_TYPES[player.seed_index], Farm.STAGES)
 				list.append(info)
 		Tab.PEOPLE:
@@ -207,18 +206,19 @@ func _known_gifts(id: String) -> String:
 
 ## Items that aren't crops: name -> what the info card says
 const OTHER_ITEMS := {
-	"fish": {"kind": "Catch", "text": "Fresh from the water. Sells for 15c."},
-	"egg": {"kind": "Animal product", "text": "Laid by a well-fed chicken. Sells for 25c."},
-	"milk": {"kind": "Animal product", "text": "From a well-fed cow. Sells for 60c."},
+	"fish": {"kind": "Catch", "text": "Fresh from the water. Sells for 5c."},
+	"egg": {"kind": "Animal product", "text": "Laid by a well-fed chicken. Sells for 12c."},
+	"milk": {"kind": "Animal product", "text": "From a well-fed cow. Sells for 30c."},
 }
 
 const TOOL_TEXT := [
 	"Chop pine trees for wood. Three hits fell a tree.",
 	"Dig grass into soil so you can plant seeds.",
 	"Plant seeds on dug soil. Press 3 again to switch seed type.",
-	"Water your crops every day so they grow overnight.",
+	"Crops only grow in wet soil. It dries after a few hours.",
 	"Slash flowers, bushes and the odd goblin.",
 	"Cast into water, wait for the ! and press E quickly.",
+	"Put it on a free tile: it waters the 8 tiles around it every morning. E picks it up again.",
 ]
 
 

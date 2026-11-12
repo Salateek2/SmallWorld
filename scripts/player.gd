@@ -3,8 +3,10 @@ extends CharacterBody2D
 ## Builds the layered Sunnyside character (body + hair + tools), a collision
 ## shape, a following camera and a small HUD from code.
 ## E / Space: pick a ripe crop in front of you, otherwise use the selected tool.
-## 1-6 pick a tool (axe, hoe, seeds, watering can, sword, fishing rod), Q cycles.
+## 1-7 pick a tool (axe, hoe, seeds, watering can, sword, fishing rod, sprinkler), Q cycles.
 ## Press 3 again to change the seed type.
+## Harvesting gives farming XP: each farming level unlocks new seeds, animals and things at Gus's.
+## E at the crate by your door opens the shipping bin (sold overnight).
 ## Fishing: face water, press E to cast, wait for the "!" and press E quickly to reel in.
 ## Tools always work on the tile in front of the character (left or right, the way it faces).
 ## Mouse wheel or +/- zooms the camera in and out.
@@ -16,11 +18,13 @@ extends CharacterBody2D
 ## Walk into water to swim (no tools while swimming).
 
 enum Hair { NONE, BOWL, CURLY, LONG, MOP, SHORT, SPIKEY }
-enum Tool { AXE, HOE, SEEDS, WATER, SWORD, ROD }
+enum Tool { AXE, HOE, SEEDS, WATER, SWORD, ROD, SPRINKLER }
 
 const Farm := preload("res://scripts/farm.gd")
 const UIStyle := preload("res://scripts/ui_style.gd")
 const SelectCursor := preload("res://scripts/select_cursor.gd")
+const Ranch := preload("res://scripts/ranch.gd")
+const Smithy := preload("res://scripts/smithy_shop.gd")
 
 @export var hair: Hair = Hair.SHORT
 @export var show_tools: bool = true
@@ -65,7 +69,7 @@ const ONE_SHOT := ["axe", "attack", "hurt", "death", "dig", "water", "doing", "c
 const UI_DIR := "res://assets/Sunnyside_World_Assets/UI/"
 const TOOL_NAMES := {
 	Tool.AXE: "Axe", Tool.HOE: "Hoe", Tool.SEEDS: "Seeds", Tool.WATER: "Watering can",
-	Tool.SWORD: "Sword", Tool.ROD: "Fishing rod",
+	Tool.SWORD: "Sword", Tool.ROD: "Fishing rod", Tool.SPRINKLER: "Sprinkler",
 }
 const TOOL_ICONS := {
 	Tool.AXE: "axe.png", Tool.HOE: "shovel.png", Tool.WATER: "water.png", Tool.SWORD: "sword.png",
@@ -73,7 +77,7 @@ const TOOL_ICONS := {
 }
 const TOOL_ANIMS := {
 	Tool.AXE: "axe", Tool.HOE: "dig", Tool.SEEDS: "doing", Tool.WATER: "water", Tool.SWORD: "attack",
-	Tool.ROD: "cast",
+	Tool.ROD: "cast", Tool.SPRINKLER: "doing",
 }
 
 # Fishing
@@ -97,6 +101,9 @@ var wood := 0
 var crops := {} # crop name -> how many harvested
 var coins := 50
 var seeds := {} # crop name -> seeds owned (Hazel gives you your first ones)
+var xp := 0 # farming XP: harvesting crops, collecting eggs, milk and fish (see Farm.LEVEL_XP)
+var upgrades: Array = [] # tools with the copper upgrade from Gus (they reach 3 tiles)
+var sprinklers := 0 # sprinklers in your bag, ready to place
 var dead := false
 var tool := Tool.AXE
 var seed_index := 0 # which of Farm.CROP_TYPES the seeds slot plants
@@ -105,7 +112,7 @@ var owned_tools: Array = [Tool.AXE] # the rest you get through the story (or Gus
 const TOOL_SOURCES := { # where to get tools you don't have
 	Tool.HOE: "Hazel might lend you one", Tool.SEEDS: "Hazel might have some",
 	Tool.WATER: "Hazel might lend you one", Tool.ROD: "Old Tom fishes by the lake",
-	Tool.SWORD: "buy one from Gus",
+	Tool.SWORD: "buy one from Gus", Tool.SPRINKLER: "Gus makes them",
 }
 
 var _layers: Array[AnimatedSprite2D] = []
@@ -133,6 +140,9 @@ var _walk_time := 0.0 # how long you've been walking without stopping
 var _run_blend := 0.0 # 0 = walking speed, 1 = running speed (eases between them)
 var _prompt: PanelContainer # "E  Talk" over what E would use
 var _prompt_label: Label
+var _guide: Control # arrow at the edge of the screen pointing to whoever has quest news
+var _guide_arrow: TextureRect
+var _guide_name: Label
 var _fishing := Fishing.NONE
 var _swimming := false # in the water (not on the dock)
 @export var swim_speed: float = 40.0
@@ -145,6 +155,8 @@ var _toast_tween: Tween
 var _quest_box: PanelContainer # current quest, under the clock
 var _quest_title: Label
 var _quest_goal: Label
+var _level_label: Label # "Farming Lv 2" under the HP line
+var _xp_fill: ColorRect # the gold part of the XP bar
 var _shown_coins := 0.0 # the HUD counts up/down to your real coins
 var _talking_to: Node2D # the villager we're chatting with (they stand still meanwhile)
 var _step_time := 0.0 # until the next puff of dust (running) or splash (swimming)
@@ -181,6 +193,7 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		_play("sit" if _sitting else "idle") # e.g. chatting from a stool
 		_prompt.visible = false
+		_guide.visible = false
 		return
 
 	if Input.is_action_just_pressed("inventory") and not _busy and _fishing == Fishing.NONE:
@@ -194,6 +207,7 @@ func _physics_process(delta: float) -> void:
 	_update_aim_highlight()
 	_check_location()
 	_update_prompt()
+	_update_guide()
 
 	if _fishing != Fishing.NONE:
 		velocity = Vector2.ZERO
@@ -223,6 +237,8 @@ func _physics_process(delta: float) -> void:
 			_talk_to(_npc_in_reach())
 		elif world.has_method("is_near_bed") and world.is_near_bed(global_position):
 			_sleep(false)
+		elif world.has_node("ShippingBin") and world.get_node("ShippingBin").is_near(global_position):
+			_open_menu("res://scripts/shipping_menu.gd")
 		elif world.has_node("Ranch") and world.get_node("Ranch").interact(self):
 			pass # fed the animals or milked a cow
 		elif not owned_tools.has(tool):
@@ -295,6 +311,8 @@ func use_target() -> Dictionary:
 		return {"text": "Shop" if npc.shop != "" else "Talk", "at": npc.global_position}
 	if world.has_method("is_near_bed") and world.is_near_bed(global_position):
 		return {"text": "Sleep", "at": global_position}
+	if world.has_node("ShippingBin") and world.get_node("ShippingBin").is_near(global_position):
+		return {"text": "Ship", "at": world.get_node("ShippingBin").global_position}
 	if world.has_node("Ranch"):
 		var ranch_target: Dictionary = world.get_node("Ranch").interact_target(self)
 		if not ranch_target.is_empty():
@@ -302,15 +320,22 @@ func use_target() -> Dictionary:
 	var farm := _farm()
 	if owned_tools.has(tool) and tool != Tool.SWORD and tool != Tool.ROD and farm and farm.is_ripe(_aim_point()):
 		return {"text": "Harvest", "at": _aim_point()}
+	if tool == Tool.SPRINKLER and farm and farm.has_sprinkler(_aim_point()):
+		return {"text": "Pick up", "at": _aim_point()}
 	return {}
 
 
 func _update_prompt() -> void:
 	var target := use_target()
+	if target.is_empty() and _farm() and not (_busy or _sitting or _swimming or _fishing != Fishing.NONE):
+		# Nothing to press E on: say how the crop you're facing is doing instead
+		var status := _farm().status_at(_aim_point())
+		if status != "":
+			target = {"text": status, "at": _aim_point(), "plain": true}
 	_prompt.visible = not target.is_empty()
 	if target.is_empty():
 		return
-	_prompt_label.text = "E  " + target["text"]
+	_prompt_label.text = target["text"] if target.get("plain", false) else "E  " + target["text"]
 	# Over the thing, in screen pixels (about a head's height above it)
 	var screen: Vector2 = get_viewport().get_canvas_transform() * (target["at"] as Vector2 + Vector2(0, -32))
 	_prompt.reset_size()
@@ -327,6 +352,72 @@ func _build_prompt(hud: CanvasLayer) -> void:
 	_prompt.add_child(_prompt_label)
 	_prompt.visible = false
 	hud.add_child(_prompt)
+
+
+# --- The quest arrow -----------------------------------------------------------
+
+## An arrow at the edge of the screen (with their name) pointing to the villager who has
+## quest news for you: the one with the "!" over their head. It hides once they're on
+## screen. If they're inside the tavern and you're outside (or the other way round),
+## it points to the door.
+func _update_guide() -> void:
+	_guide.visible = false
+	var world := get_parent()
+	var farm := _farm()
+	if farm == null or not world.has_method("hall_rect"):
+		return
+	var target: Node2D = null
+	for npc in get_tree().get_nodes_in_group("npc"):
+		if Story.has_news(npc.npc_id) and (target == null or global_position.distance_to(npc.global_position)
+				< global_position.distance_to(target.global_position)):
+			target = npc
+	if target == null:
+		return
+	var hall: Rect2i = world.hall_rect()
+	var at := target.global_position
+	var we_are_inside := hall.has_point(farm.cell_at(global_position))
+	if hall.has_point(farm.cell_at(at)) != we_are_inside:
+		at = world.cell_to_world(world._hall_door() if we_are_inside else world._tavern_door())
+	# Where that is on the screen; nothing to show if you can already see them
+	var screen_size := get_viewport().get_visible_rect().size
+	var on_screen: Vector2 = get_viewport().get_canvas_transform() * at
+	if Rect2(Vector2.ZERO, screen_size).grow(-40).has_point(on_screen):
+		return
+	var center := screen_size / 2.0
+	var direction := (on_screen - center).normalized()
+	# Slide out from the middle until just inside the edge (clear of the HUD and hotbar)
+	var room := center - Vector2(90, 140)
+	var reach := minf(room.x / maxf(absf(direction.x), 0.001), room.y / maxf(absf(direction.y), 0.001))
+	var bob := sin(Time.get_ticks_msec() / 180.0) * 4.0
+	_guide.position = (center + direction * (reach + bob)).round()
+	_guide_arrow.rotation = direction.angle() + PI / 2.0 # the art points up
+	_guide_name.text = target.display_name
+	_guide.visible = true
+
+
+func _build_guide(hud: CanvasLayer) -> void:
+	_guide = Control.new()
+	_guide.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_guide.visible = false
+	_guide_arrow = TextureRect.new()
+	_guide_arrow.texture = load(UI_DIR + "arrow_up.png")
+	_guide_arrow.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_guide_arrow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_guide_arrow.size = Vector2(30, 39) # 3x the art
+	_guide_arrow.position = -_guide_arrow.size / 2.0
+	_guide_arrow.pivot_offset = _guide_arrow.size / 2.0
+	_guide_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_guide.add_child(_guide_arrow)
+	_guide_name = Label.new()
+	_guide_name.position = Vector2(-100, 26)
+	_guide_name.size = Vector2(200, 12)
+	_guide_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_guide_name.add_theme_font_size_override("font_size", 8)
+	_guide_name.add_theme_color_override("font_color", Color(1.0, 0.94, 0.82))
+	_guide_name.add_theme_color_override("font_outline_color", Color.BLACK)
+	_guide_name.add_theme_constant_override("outline_size", 4)
+	_guide.add_child(_guide_name)
+	hud.add_child(_guide)
 
 
 ## Sits down on a seat from the map's seat_near().
@@ -408,14 +499,16 @@ func _apply_tool(anim: String) -> void:
 			_chop()
 		"dig":
 			Juice.sound("dig")
-			if farm and farm.till(_aim_point()):
-				Juice.puff(_aim_point() + Vector2(0, -3), Juice.DIRT, 8)
-				Juice.shake(0.5)
+			for p in _aim_points(Tool.HOE):
+				if farm and farm.till(p):
+					Juice.puff(p + Vector2(0, -3), Juice.DIRT, 8)
+					Juice.shake(0.5)
 		"water":
 			Juice.sound("water")
-			Juice.puff(_aim_point() + Vector2(0, -4), Juice.WATER, 8, 22.0)
-			if farm:
-				farm.water(_aim_point())
+			for p in _aim_points(Tool.WATER):
+				Juice.puff(p + Vector2(0, -4), Juice.WATER, 8, 22.0)
+				if farm:
+					farm.water(p)
 		"doing":
 			_harvest_or_plant()
 		"attack":
@@ -491,13 +584,71 @@ func _harvest_or_plant() -> void:
 		Juice.puff(_aim_point(), Juice.LEAF, 6)
 		Juice.gain(global_position + Vector2(0, -16), 1, picked)
 		Juice.sound("harvest")
+		add_xp(Farm.item_xp(picked))
 	elif tool == Tool.SEEDS:
 		var seed_type: String = Farm.CROP_TYPES[seed_index]
 		if seeds.get(seed_type, 0) > 0 and farm.plant(_aim_point(), seed_type):
 			seeds[seed_type] -= 1
+			if seeds[seed_type] <= 0:
+				_next_seed_type() # ran out: move on to seeds you still have
 			_update_hotbar()
 			Juice.puff(_aim_point(), Juice.DIRT, 4, 18.0)
 			Juice.sound("plant")
+	elif tool == Tool.SPRINKLER:
+		var p := _aim_point()
+		if farm.remove_sprinkler(p): # E on one that's already there picks it back up
+			sprinklers += 1
+			Juice.sound("tick")
+		elif sprinklers <= 0:
+			notify("No sprinklers left - Gus makes them")
+		elif farm.place_sprinkler(p):
+			sprinklers -= 1
+			Juice.puff(p + Vector2(0, -6), Juice.WATER, 14, 40.0)
+			Juice.sound("water")
+		else:
+			notify("A sprinkler needs a free tile")
+		_update_hotbar()
+
+
+# --- Farming level ------------------------------------------------------------
+
+func level() -> int:
+	return Farm.level_for(xp)
+
+
+## Adds farming XP. Reaching a new level pays a few coins and unlocks new things to buy.
+func add_xp(amount: int) -> void:
+	if amount <= 0:
+		return
+	var before := level()
+	xp += amount
+	if level() > before:
+		var bonus := level() * 25
+		coins += bonus
+		var text := "Farming level %d!\n+%d coins" % [level(), bonus]
+		var new_things := unlocked_at(level())
+		if not new_things.is_empty():
+			text += "\n\nNew: " + ", ".join(new_things)
+		show_big_message(text, 2.5)
+		Juice.sound("harvest", 1.3)
+		Juice.shake(1.0)
+		Juice.puff(global_position + Vector2(0, -10), Juice.SPARKLE, 20, 60.0)
+	_update_hud()
+
+
+## Names of everything that farming level unlocks: seeds, animals, Gus's wares.
+func unlocked_at(at_level: int) -> PackedStringArray:
+	var names := PackedStringArray()
+	for crop in Farm.CROP_TYPES:
+		if Farm.CROP_DATA[crop]["level"] == at_level:
+			names.append(crop.capitalize())
+	for type in Ranch.TYPES:
+		if Ranch.TYPES[type]["level"] == at_level:
+			names.append(Ranch.TYPES[type]["name"])
+	for ware in Smithy.WARES:
+		if ware.get("level", 1) == at_level and at_level > 1:
+			names.append(ware["name"])
+	return names
 
 
 # --- Fishing ---------------------------------------------------------------
@@ -636,9 +787,15 @@ func _sleep(passed_out: bool) -> void:
 		global_position = get_parent().bed_side_position()
 		_camera.reset_smoothing()
 	_update_hud()
-	_message.text = "You passed out...\nDay %d" % clock.day if passed_out else "Day %d" % clock.day
+	var day_text := ("You passed out...\nDay %d" if passed_out else "Day %d") % clock.day
+	# What the shipping bin sold overnight
+	var bin := get_parent().get_node_or_null("ShippingBin")
+	var earned: int = bin.take_report() if bin else 0
+	if earned > 0:
+		day_text += "\n\nShipped: +%d coins" % earned
+	_message.text = day_text
 	_message.modulate.a = 1.0
-	await get_tree().create_timer(1.2).timeout
+	await get_tree().create_timer(2.4 if earned > 0 else 1.2).timeout
 	tween = create_tween()
 	tween.tween_property(_fade, "color:a", 0.0, 1.0)
 	tween.parallel().tween_property(_message, "modulate:a", 0.0, 1.0)
@@ -690,11 +847,11 @@ func _hold(npc: Node2D) -> void:
 
 
 ## Big centered text that fades in and out over the game (e.g. "Chapter 1 complete").
-func show_big_message(text: String) -> void:
+func show_big_message(text: String, hold := 3.5) -> void:
 	_message.text = text
 	var tween := create_tween()
 	tween.tween_property(_message, "modulate:a", 1.0, 1.0)
-	tween.tween_interval(3.5)
+	tween.tween_interval(hold)
 	tween.tween_property(_message, "modulate:a", 0.0, 1.5)
 
 
@@ -745,6 +902,7 @@ func add_item(item: String, amount: int) -> void:
 		wood += amount
 	else:
 		crops[item] = crops.get(item, 0) + amount
+		add_xp(Farm.item_xp(item) * amount) # eggs, milk and fish count as farming too
 	refresh_ui()
 	Juice.pickup_sound()
 	Juice.gain(global_position + Vector2(0, -16), amount, item)
@@ -757,6 +915,7 @@ func get_state() -> Dictionary:
 		"hp": hp, "coins": coins, "wood": wood,
 		"crops": crops.duplicate(), "seeds": seeds.duplicate(),
 		"tool": tool, "seed_index": seed_index, "tools": owned_tools.duplicate(),
+		"xp": xp, "upgrades": upgrades.duplicate(), "sprinklers": sprinklers,
 	}
 
 
@@ -777,6 +936,10 @@ func set_state(data: Dictionary) -> void:
 	tool = int(data["tool"]) as Tool
 	if data.has("tools"): # older saves had every tool
 		owned_tools = data["tools"].map(func(t): return int(t))
+	xp = int(data.get("xp", 0)) # (saves from before farming levels start at level 1)
+	upgrades = data.get("upgrades", []).map(func(t): return int(t))
+	sprinklers = int(data.get("sprinklers", 0))
+	seed_index = clampi(seed_index, 0, Farm.CROP_TYPES.size() - 1)
 	_camera.reset_smoothing()
 	refresh_ui()
 
@@ -796,19 +959,32 @@ func _aim_point() -> Vector2:
 	return global_position + Vector2(_facing * 16.0, 6.0)
 
 
+## The spots a tool works on: one tile, or three in a row with Gus's copper upgrade.
+func _aim_points(t: int) -> Array[Vector2]:
+	var points: Array[Vector2] = [_aim_point()]
+	if upgrades.has(t):
+		for i in [1, 2]:
+			points.append(_aim_point() + Vector2(_facing * 16.0 * i, 0))
+	return points
+
+
 func _update_aim_highlight() -> void:
 	var farm := _farm()
 	if farm == null:
 		return
 	var p := _aim_point()
 	farm.highlight_cell = farm.cell_at(p)
-	farm.show_highlight = not dead and tool in [Tool.HOE, Tool.WATER, Tool.SEEDS]
+	farm.highlight_length = 3 if upgrades.has(tool) else 1
+	farm.highlight_dir = int(_facing)
+	farm.show_highlight = not dead and tool in [Tool.HOE, Tool.WATER, Tool.SEEDS, Tool.SPRINKLER]
 	# Green outline = the tool will do something there, red = it won't
 	match tool:
 		Tool.HOE:
-			farm.highlight_ok = farm.can_till(p)
+			farm.highlight_ok = _aim_points(tool).any(func(q): return farm.can_till(q))
 		Tool.WATER:
-			farm.highlight_ok = farm.can_water(p)
+			farm.highlight_ok = _aim_points(tool).any(func(q): return farm.can_water(q))
+		Tool.SPRINKLER:
+			farm.highlight_ok = farm.has_sprinkler(p) or (sprinklers > 0 and farm.can_place_sprinkler(p))
 		Tool.SEEDS:
 			farm.highlight_ok = farm.can_plant(p) or farm.is_ripe(p)
 
@@ -825,9 +1001,13 @@ func _handle_tool_keys() -> void:
 		_select_tool((tool + 1) % Tool.size())
 
 
-## Pressing 3 again: switch to the next seed type (all of them, even ones you have 0 of).
+## Pressing 3 again: switch to the next seed type you have seeds for.
 func _next_seed_type() -> void:
-	seed_index = (seed_index + 1) % Farm.CROP_TYPES.size()
+	for step in range(1, Farm.CROP_TYPES.size() + 1):
+		var next := (seed_index + step) % Farm.CROP_TYPES.size()
+		if seeds.get(Farm.CROP_TYPES[next], 0) > 0:
+			seed_index = next
+			return
 
 
 func _select_tool(t: int) -> void:
@@ -972,6 +1152,24 @@ func _build_hud() -> void:
 	_hud_label.add_theme_constant_override("outline_size", 6)
 	hud.add_child(_hud_label)
 
+	# Farming level with an XP bar, under the HP line
+	_level_label = Label.new()
+	_level_label.position = Vector2(16, 40)
+	_level_label.add_theme_font_size_override("font_size", 8)
+	_level_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_level_label.add_theme_constant_override("outline_size", 4)
+	hud.add_child(_level_label)
+	var xp_back := ColorRect.new()
+	xp_back.color = Color(0.2, 0.12, 0.05)
+	xp_back.position = Vector2(136, 40)
+	xp_back.size = Vector2(124, 10)
+	hud.add_child(xp_back)
+	_xp_fill = ColorRect.new()
+	_xp_fill.color = Color(1.0, 0.8, 0.3)
+	_xp_fill.position = Vector2(138, 42)
+	_xp_fill.size = Vector2(0, 6)
+	hud.add_child(_xp_fill)
+
 	_clock_label = Label.new()
 	_clock_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_clock_label.offset_left = -320
@@ -1017,6 +1215,7 @@ func _build_hud() -> void:
 	_build_hotbar(hud)
 
 	_build_prompt(hud)
+	_build_guide(hud)
 	var tips := CanvasLayer.new() # one-time tips about the controls
 	tips.set_script(load("res://scripts/tips.gd"))
 	tips.set("player", self)
@@ -1051,6 +1250,7 @@ func _build_hud() -> void:
 	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_message.add_theme_font_size_override("font_size", 32)
+	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART # long "New: ..." lists wrap
 	_message.add_theme_color_override("font_outline_color", Color(0.2, 0.12, 0.05))
 	_message.add_theme_constant_override("outline_size", 12) # readable over the map too
 	_message.modulate.a = 0.0
@@ -1121,7 +1321,7 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 	column.add_child(bar)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 10)
+	row.add_theme_constant_override("separation", 6) # 7 slots: keep clear of the tips box
 	bar.add_child(row)
 	for i in Tool.size():
 		var slot := PanelContainer.new()
@@ -1132,8 +1332,7 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		if TOOL_ICONS.has(i):
-			icon.texture = load(UI_DIR + TOOL_ICONS[i])
+		icon.texture = tool_icon(i)
 		slot.add_child(icon)
 		var number := Label.new()
 		number.text = str(i + 1)
@@ -1147,6 +1346,13 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 	_hotbar_cursor = SelectCursor.new()
 	_hotbar_cursor.outset = 15 # the slot's 9 px padding + 6 px outside its edge
 	_hotbar_slots[0].add_child(_hotbar_cursor)
+
+
+## A tool's hotbar picture (null for seeds: that slot shows the crop).
+func tool_icon(t: int) -> Texture2D:
+	if t == Tool.SPRINKLER:
+		return load(Farm.SPRINKLER_ICON)
+	return load(UI_DIR + TOOL_ICONS[t]) if TOOL_ICONS.has(t) else null
 
 
 func _update_hotbar() -> void:
@@ -1168,6 +1374,10 @@ func _update_hotbar() -> void:
 			_tool_label.text = "%s seeds x0 - buy some at the market  (press 3 to change)" % seed_type.capitalize()
 	elif not owned_tools.has(tool):
 		_tool_label.text = "%s - %s" % [TOOL_NAMES[tool], TOOL_SOURCES.get(tool, "not yours yet")]
+	elif tool == Tool.SPRINKLER:
+		_tool_label.text = "Sprinkler x%d  (waters the 8 tiles around it)" % sprinklers
+	elif upgrades.has(tool):
+		_tool_label.text = "Copper %s  (3 tiles)" % TOOL_NAMES[tool].to_lower()
 	else:
 		_tool_label.text = TOOL_NAMES[tool]
 
@@ -1183,3 +1393,5 @@ func give_tool(t: int) -> void:
 func _update_hud() -> void:
 	# Crops, fish and wood are listed in the inventory (I / Tab)
 	_hud_label.text = "HP: %d / %d    Coins: %d" % [maxi(hp, 0), max_hp, int(_shown_coins)]
+	_level_label.text = "Farming Lv %d" % level()
+	_xp_fill.size.x = 120.0 * Farm.level_progress(xp)

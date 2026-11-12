@@ -30,6 +30,7 @@ func save_game() -> bool:
 		"map": world.get_changes(),
 		"story": Story.get_state(),
 		"ranch": world.get_node("Ranch").get_state() if world.has_node("Ranch") else [],
+		"bin": world.get_node("ShippingBin").get_state() if world.has_node("ShippingBin") else {},
 	}
 	var file := FileAccess.open(PATH, FileAccess.WRITE)
 	if file == null:
@@ -57,6 +58,8 @@ func apply(world: Node) -> void:
 	Story.set_state(data.get("story", {}))
 	if world.has_node("Ranch"):
 		world.get_node("Ranch").set_state(data.get("ranch", []))
+	if world.has_node("ShippingBin"):
+		world.get_node("ShippingBin").set_state(data.get("bin", {}))
 	world.get_node("Player").set_state(data["player"])
 
 
@@ -65,6 +68,7 @@ func new_game() -> void:
 	load_requested = false
 	intro_requested = true
 	Story.reset()
+	Story.flags["farm_start"] = true # this game opens on the farm with Hazel (see TALK)
 
 
 func continue_game() -> void:

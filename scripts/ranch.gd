@@ -6,10 +6,11 @@ extends Node2D
 
 const ANIMALS_DIR := "res://assets/Sunnyside_World_Assets/Elements/Animals/"
 const ITEMS_DIR := "res://assets/Sunnyside_World_Assets/Elements/Crops/"
-## Animals you can buy. price = market price, product = what a fed animal gives each morning
+## Animals you can buy. price = market price, product = what a fed animal gives each morning,
+## level = farming level that unlocks them
 const TYPES := {
-	"chicken": {"name": "Chicken", "price": 80, "strip": "spr_deco_chicken_01_strip4.png", "product": "egg", "speed": 14.0},
-	"cow": {"name": "Cow", "price": 250, "strip": "spr_deco_cow_strip4.png", "product": "milk", "speed": 8.0},
+	"chicken": {"name": "Chicken", "price": 60, "strip": "spr_deco_chicken_01_strip4.png", "product": "egg", "speed": 14.0, "level": 3},
+	"cow": {"name": "Cow", "price": 180, "strip": "spr_deco_cow_strip4.png", "product": "milk", "speed": 8.0, "level": 6},
 }
 const MAX_ANIMALS := 8
 const FEED := "wheat" ## what goes in the trough, one per animal per day

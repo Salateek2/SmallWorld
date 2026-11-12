@@ -1,17 +1,12 @@
 extends CanvasLayer
-## SmallWorld market window: sell harvested crops, buy seeds.
+## SmallWorld market window: sell harvested crops, buy seeds and animals.
+## Seeds and animals unlock as your farming level goes up (the next ones are shown greyed out).
 ## Opened by the player at the market counter in the village. Built entirely in code.
 ## Click the buttons (or use arrow keys + Enter). Esc or E closes it.
 
 signal closed
 
 const Farm := preload("res://scripts/farm.gd")
-## Things you can sell that aren't crops
-const EXTRA_ITEMS := {
-	"fish": {"sell": 15, "icon": "res://assets/Sunnyside_World_Assets/Elements/Crops/fish.png"},
-	"egg": {"sell": 25, "icon": "res://assets/Sunnyside_World_Assets/Elements/Crops/egg.png"},
-	"milk": {"sell": 60, "icon": "res://assets/Sunnyside_World_Assets/Elements/Crops/milk.png"},
-}
 const Ranch := preload("res://scripts/ranch.gd")
 
 var player: Node ## the player opening the shop (has coins, crops, seeds)
@@ -80,13 +75,13 @@ func refresh() -> void:
 			child.queue_free()
 
 	var anything := false
-	for crop in Farm.CROP_TYPES + EXTRA_ITEMS.keys():
+	for crop in Farm.sellable_items():
 		var count: int = player.crops.get(crop, 0)
 		if count <= 0:
 			continue
 		anything = true
-		var row := _row(_sell_list, _icon(crop),
-				"%s x%d" % [crop.capitalize(), count], "%dc each" % _price(crop))
+		var row := _row(_sell_list, Farm.item_icon(crop),
+				"%s x%d" % [crop.capitalize(), count], "%dc each" % Farm.item_price(crop))
 		_button(row, "Sell 1", _sell.bind(crop, 1))
 		_button(row, "Sell all", _sell.bind(crop, count))
 	if not anything:
@@ -94,11 +89,16 @@ func refresh() -> void:
 		row.add_child(_label("Nothing to sell yet.\nHarvest some crops!", 8, Color(0.9, 0.85, 0.75)))
 		_sell_list.add_child(row)
 
+	var level: int = player.level()
 	for crop in Farm.CROP_TYPES:
 		var data: Dictionary = Farm.CROP_DATA[crop]
+		if data["level"] > level:
+			if data["level"] == level + 1: # a peek at what the next level brings
+				_locked_row(Farm.crop_texture(crop, Farm.STAGES), "%s seeds" % crop.capitalize(), data["level"])
+			continue
 		var row := _row(_buy_list, Farm.crop_texture(crop, 0),
 				"%s seeds" % crop.capitalize(),
-				"%dc - ripe in %d days - you have %d" % [data["seed"], data["nights"], player.seeds.get(crop, 0)])
+				"%dc - ripe in %d hours - you have %d" % [data["seed"], data["hours"], player.seeds.get(crop, 0)])
 		_button(row, "Buy 1", _buy.bind(crop, 1), player.coins >= data["seed"])
 		_button(row, "Buy 5", _buy.bind(crop, 5), player.coins >= data["seed"] * 5)
 
@@ -107,6 +107,10 @@ func refresh() -> void:
 	if ranch:
 		for type in Ranch.TYPES:
 			var info: Dictionary = Ranch.TYPES[type]
+			if info["level"] > level:
+				if info["level"] == level + 1:
+					_locked_row(_animal_icon(type), info["name"], info["level"])
+				continue
 			var row := _row(_buy_list, _animal_icon(type), info["name"],
 					"%dc - gives %s when fed - you have %d" % [info["price"], info["product"], ranch.count(type)])
 			var can_buy: bool = player.coins >= info["price"] and not ranch.is_full()
@@ -123,7 +127,7 @@ func _sell(crop: String, amount: int) -> void:
 	player.crops[crop] -= amount
 	if player.crops[crop] <= 0:
 		player.crops.erase(crop)
-	player.coins += amount * _price(crop)
+	player.coins += amount * Farm.item_price(crop)
 	player.refresh_ui()
 	refresh()
 
@@ -163,22 +167,26 @@ func _animal_icon(type: String) -> Texture2D:
 	return atlas
 
 
-func _price(item: String) -> int:
-	return EXTRA_ITEMS[item]["sell"] if EXTRA_ITEMS.has(item) else Farm.CROP_DATA[item]["sell"]
-
-
-func _icon(item: String) -> Texture2D:
-	return load(EXTRA_ITEMS[item]["icon"]) if EXTRA_ITEMS.has(item) else Farm.crop_texture(item, Farm.STAGES)
+## A greyed-out row for something you can't buy yet.
+func _locked_row(icon_texture: Texture2D, text: String, at_level: int) -> void:
+	var row := _row(_buy_list, icon_texture, text, "Unlocks at farming level %d" % at_level)
+	row.modulate.a = 0.55
 
 
 # --- UI helpers --------------------------------------------------------------
 
 func _side(parent: Container, heading: String) -> VBoxContainer:
+	# The list scrolls when it gets long (lots of crops unlocked)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(440, 380)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.follow_focus = true
 	var list := VBoxContainer.new()
-	list.custom_minimum_size = Vector2(420, 0)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.add_theme_constant_override("separation", 6)
 	list.add_child(_label(heading, 16, Color(1, 0.9, 0.7)))
-	parent.add_child(list)
+	scroll.add_child(list)
+	parent.add_child(scroll)
 	return list
 
 

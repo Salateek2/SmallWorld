@@ -14,9 +14,9 @@ const TIPS := [
 	["walk", "Walk with WASD or the arrow keys.\nKeep walking and you'll start to run."],
 	["quest", "Your current goal is shown in the top right corner."],
 	["zoom", "Zoom in and out with the mouse wheel\n(or the + and - keys)."],
-	["tools", "Pick a tool with the number keys 1-7 (or Q),\nthen press E to use it."],
+	["tools", "Pick a tool with the number keys (or Q),\nthen press E to use it."],
 	["grow", "Crops only grow in wet (dark) soil. Face one to see\nhow long it needs. Soil dries after a few hours."],
-	["bag", "Press I (or Tab) to open your bag.\nPeople and clues are in there too."],
+	["bag", "Press I (or Tab) to open your bag.\nPress J for your journal: people, clues and quests."],
 	["friends", "Chat with people every day and bring them\npresents to become friends."],
 	["night", "It's getting late! Sleep in your bed to start\na new day. The game saves every morning."],
 ]

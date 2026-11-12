@@ -1,9 +1,10 @@
 extends CanvasLayer
-## SmallWorld inventory window (I or Tab). Built in code from the pack's UI art:
+## SmallWorld bag and journal windows. Built in code from the pack's UI art:
 ## 9-slice boxes for panels and slots, corner brackets for the selection cursor.
-## Left: an info card about the selected thing. Right: tabs (Items / Tools / People)
-## with a grid of slots. Arrow keys or the mouse select, E / Enter uses (equip a tool,
-## pick seeds to plant), Q switches tab, I / Tab / Esc closes.
+## Left: an info card about the selected thing. Right: labelled groups of slots.
+##   The bag (I or Tab): what you carry, as "Harvest" and "Seeds".
+##   The journal (J): what you know, as three pages: People, Clues and Quests (Q turns the page).
+## Arrow keys or the mouse select, E / Enter plants the selected seeds, I / Tab / J / Esc closes.
 
 signal closed
 
@@ -13,34 +14,29 @@ const SelectCursor := preload("res://scripts/select_cursor.gd")
 const UI := "res://assets/Sunnyside_World_Assets/UI/"
 const CROPS := "res://assets/Sunnyside_World_Assets/Elements/Crops/"
 const PIXEL := 4 # UI art is drawn 4x bigger
-const COLUMNS := 5
-const ROWS := 3
+const COLUMNS := 6
 const SLOT := 64
 
-enum Tab { ITEMS, TOOLS, PEOPLE, JOURNAL }
-const TABS := [
-	{"name": "Items", "icon": "basket.png"},
-	{"name": "Tools", "icon": "hand_open_01.png"},
-	{"name": "People", "icon": "playercount.png"},
-	{"name": "Clues", "icon": "search.png"},
-]
 const DARK_TEXT := Color(0.24, 0.16, 0.12)
 const SOFT_TEXT := Color(0.55, 0.6, 0.7)
 const CREAM := Color(1.0, 0.94, 0.82)
 
-var player: Node ## the player (coins, crops, seeds, wood, tools)
+var player: Node ## the player (coins, crops, seeds, wood)
+var journal := false ## true = the journal (people, clues, quests), false = the bag
 
-var _tab := Tab.ITEMS
-var _entries: Array[Dictionary] = [] # what's in the current tab
-var _selected := 0
+## What the window shows: [{name, icon, empty: [title, text],
+##   groups: [{title, rows (at least this many), entries: [{name, kind, text, icon, count, ...}]}]}]
+## The bag has one page, the journal three (with tabs to pick one).
+var _pages: Array = []
 var _page := 0
+var _entries: Array = [] # everything on the current page, in reading order
+var _slots: Array[Control] = [] # the slot of each entry
+var _rows: Array = [] # rows of slots, as lists of indexes into _entries (for up / down)
+var _selected := 0
 
 var _window: Control
 var _tab_buttons: Array[Button] = []
-var _grid: GridContainer
-var _page_label: Label
-var _arrow_left: TextureButton
-var _arrow_right: TextureButton
+var _groups: VBoxContainer # the titles and grids of the current page
 var _cursor: Control # gold corner brackets around the selected slot
 # info card
 var _info_icon: TextureRect
@@ -59,20 +55,23 @@ func _ready() -> void:
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(dim)
 
+	_pages = _journal_pages() if journal else _bag_pages()
+	var center := CenterContainer.new() # keeps the window in the middle, whatever its size
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(center)
 	_window = HBoxContainer.new()
 	_window.add_theme_constant_override("separation", 16)
-	add_child(_window)
+	center.add_child(_window)
 	_build_left_column()
 	_build_right_column()
 	_build_cursor()
 
-	_show_tab(Tab.ITEMS)
+	_show_page(0)
+	_window.modulate.a = 0.0
 	await get_tree().process_frame
-	# Center the window and pop it in
-	_window.position = (get_viewport().get_visible_rect().size - _window.size) / 2
+	# Pop it in
 	_window.pivot_offset = _window.size / 2
 	_window.scale = Vector2(0.85, 0.85)
-	_window.modulate.a = 0.0
 	var tween := create_tween().set_parallel().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(_window, "scale", Vector2.ONE, 0.25)
 	tween.tween_property(_window, "modulate:a", 1.0, 0.15)
@@ -82,18 +81,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
 	var handled := true
-	if event.is_action("inventory") or event.is_action("ui_cancel"):
+	if event.is_action("inventory") or event.is_action("journal") or event.is_action("ui_cancel"):
 		close()
 	elif event.is_action("next_tool"):
-		_show_tab((_tab + 1) % TABS.size())
+		_show_page((_page + 1) % _pages.size())
 	elif event.is_action("ui_left") or event.is_action("move_left"):
 		_move(-1)
 	elif event.is_action("ui_right") or event.is_action("move_right"):
 		_move(1)
 	elif event.is_action("ui_up") or event.is_action("move_up"):
-		_move(-COLUMNS)
+		_move_row(-1)
 	elif event.is_action("ui_down") or event.is_action("move_down"):
-		_move(COLUMNS)
+		_move_row(1)
 	elif event.is_action("use") or event.is_action("ui_accept"):
 		_use_selected()
 	else:
@@ -109,70 +108,83 @@ func close() -> void:
 
 # --- Content -----------------------------------------------------------------
 
-## Everything shown in a tab, as a list of {name, kind, text, icon, count, ...}.
-func _collect(tab: int) -> Array[Dictionary]:
-	var list: Array[Dictionary] = []
-	match tab:
-		Tab.ITEMS:
-			for crop in Farm.CROP_TYPES:
-				var count: int = player.crops.get(crop, 0)
-				if count > 0:
-					list.append({"name": crop.capitalize(), "kind": "Crop", "count": count,
-						"icon": Farm.crop_texture(crop, Farm.STAGES), "crop": crop,
-						"text": "Sells for %dc at the market." % Farm.CROP_DATA[crop]["sell"]})
-			for item in OTHER_ITEMS:
-				if player.crops.get(item, 0) > 0:
-					var info: Dictionary = OTHER_ITEMS[item]
-					list.append({"name": item.capitalize(), "kind": info["kind"], "count": player.crops[item],
-						"icon": load(CROPS + item + ".png"), "text": info["text"]})
-			if player.wood > 0:
-				list.append({"name": "Wood", "kind": "Material", "count": player.wood,
-					"icon": load(CROPS + "wood.png"), "text": "From chopping pine trees. Good for building."})
-			for crop in Farm.CROP_TYPES:
-				var count: int = player.seeds.get(crop, 0)
-				if count > 0:
-					var data: Dictionary = Farm.CROP_DATA[crop]
-					list.append({"name": "%s seeds" % crop.capitalize(), "kind": "Seeds", "count": count,
-						"icon": Farm.crop_texture(crop, 0), "seed": crop,
-						"text": "Plant on dug soil and keep it watered.\nRipe in %d hours." % data["hours"]})
-		Tab.TOOLS:
-			for t in player.Tool.size():
-				if not player.owned_tools.has(t):
-					continue # only tools you actually have
-				var info := {"name": player.TOOL_NAMES[t], "kind": "Tool  (key %d)" % (t + 1), "tool": t,
-					"text": TOOL_TEXT[t], "count": 0}
-				info["icon"] = player.tool_icon(t)
-				if info["icon"] == null: # seeds: show the crop
-					info["icon"] = Farm.crop_texture(Farm.CROP_TYPES[player.seed_index], Farm.STAGES)
-				list.append(info)
-		Tab.PEOPLE:
-			var text: Dictionary = Story.Text.ABOUT
-			for id in Story.Text.NPCS:
-				var npc: Dictionary = Story.Text.NPCS[id]
-				var info := {"name": npc["name"], "kind": "Willowbrook", "count": 0,
-					"icon": _portrait(npc["hair"], npc.get("hair_color", Color.WHITE)),
-					"text": text.get(id, "")}
-				if Story.can_befriend(id):
-					info["kind"] = "%d / %d hearts" % [Story.hearts(id), Story.MAX_HEARTS]
-					info["text"] += _known_gifts(id)
-				list.append(info)
-			list.append({"name": "Merchant", "kind": "Willowbrook Village", "count": 0,
-				"icon": _portrait("curlyhair", Color.WHITE),
-				"text": "Runs the market south of the statue.\nBuys crops and fish, sells seeds."})
-		Tab.JOURNAL:
-			for clue in _collect_clues():
-				list.append(clue)
-	return list
+## The bag: what you've gathered, and the seeds you can plant.
+func _bag_pages() -> Array:
+	var harvest := []
+	for crop in Farm.CROP_TYPES:
+		var count: int = player.crops.get(crop, 0)
+		if count > 0:
+			harvest.append({"name": crop.capitalize(), "kind": "Crop", "count": count,
+				"icon": Farm.crop_texture(crop, Farm.STAGES), "crop": crop,
+				"text": "Sells for %dc at the market." % Farm.CROP_DATA[crop]["sell"]})
+	for item in OTHER_ITEMS:
+		if player.crops.get(item, 0) > 0:
+			var info: Dictionary = OTHER_ITEMS[item]
+			harvest.append({"name": item.capitalize(), "kind": info["kind"], "count": player.crops[item],
+				"icon": load(CROPS + item + ".png"), "text": info["text"]})
+	if player.wood > 0:
+		harvest.append({"name": "Wood", "kind": "Material", "count": player.wood,
+			"icon": load(CROPS + "wood.png"), "text": "From chopping pine trees. Good for building."})
+	var seeds := []
+	for crop in Farm.CROP_TYPES:
+		var count: int = player.seeds.get(crop, 0)
+		if count > 0:
+			var data: Dictionary = Farm.CROP_DATA[crop]
+			seeds.append({"name": "%s seeds" % crop.capitalize(), "kind": "Seeds", "count": count,
+				"icon": Farm.crop_texture(crop, 0), "seed": crop,
+				"text": "Plant on dug soil and keep it watered.\nRipe in %d hours." % data["hours"]})
+	return [{"name": "Bag", "icon": "basket.png",
+		"empty": ["Nothing here yet", "Harvest crops, catch fish\nor chop trees to fill your bag."],
+		"groups": [
+			{"title": "Harvest", "rows": 2, "entries": harvest},
+			{"title": "Seeds", "rows": 2, "entries": seeds},
+		]}]
 
 
-## Clues you've found, for the journal tab.
-func _collect_clues() -> Array:
-	var list := []
+## The journal: the people you've met, the clues you've found and your quests.
+func _journal_pages() -> Array:
+	var people := []
+	for id in Story.Text.NPCS:
+		var npc: Dictionary = Story.Text.NPCS[id]
+		var info := {"name": npc["name"], "kind": "Willowbrook", "count": 0,
+			"icon": _portrait(npc["hair"], npc.get("hair_color", Color.WHITE)),
+			"text": Story.Text.ABOUT.get(id, "")}
+		if Story.can_befriend(id):
+			info["kind"] = "%d / %d hearts" % [Story.hearts(id), Story.MAX_HEARTS]
+			info["text"] += _known_gifts(id)
+		people.append(info)
+	people.append({"name": "Merchant", "kind": "Willowbrook Village", "count": 0,
+		"icon": _portrait("curlyhair", Color.WHITE),
+		"text": "Runs the market south of the statue.\nBuys crops and fish, sells seeds."})
+
+	var clues := []
 	for id in Story.clues:
 		var clue: Dictionary = Story.Text.CLUES[id]
-		list.append({"name": clue["title"], "kind": "Clue", "count": 0,
+		clues.append({"name": clue["title"], "kind": "Clue", "count": 0,
 			"icon": load(UI + "search.png"), "text": clue["text"]})
-	return list
+
+	# Quests you're on first, then the ones you've finished
+	var quests := []
+	for state in ["active", "done"]:
+		for id in Story.quests:
+			if Story.quests[id] != state:
+				continue
+			var quest: Dictionary = Story.Text.QUESTS[id]
+			quests.append({"name": quest["title"], "count": 0,
+				"kind": "Quest" if state == "active" else "Finished",
+				"icon": load(UI + ("expression_alerted.png" if state == "active" else "confirm.png")),
+				"text": Story.quest_goal_text(id) if state == "active" else quest["goal"]})
+
+	return [
+		{"name": "People", "icon": "playercount.png", "empty": ["Nobody yet", ""],
+			"groups": [{"title": "People of Willowbrook", "rows": 4, "entries": people}]},
+		{"name": "Clues", "icon": "search.png",
+			"empty": ["No clues yet", "Talk to people and look around.\nWhat you find out is written here."],
+			"groups": [{"title": "What you've found out", "rows": 4, "entries": clues}]},
+		{"name": "Quests", "icon": "expression_alerted.png",
+			"empty": ["No quests yet", "People will ask you for help."],
+			"groups": [{"title": "Things to do", "rows": 4, "entries": quests}]},
+	]
 
 
 ## A head-and-shoulders picture of a villager: the idle frame's body with their hair on top.
@@ -211,88 +223,86 @@ const OTHER_ITEMS := {
 	"milk": {"kind": "Animal product", "text": "From a well-fed cow. Sells for 30c."},
 }
 
-const TOOL_TEXT := [
-	"Chop pine trees for wood. Three hits fell a tree.",
-	"Dig grass into soil so you can plant seeds.",
-	"Plant seeds on dug soil. Press 3 again to switch seed type.",
-	"Crops only grow in wet soil. It dries after a few hours.",
-	"Slash flowers, bushes and the odd goblin.",
-	"Cast into water, wait for the ! and press E quickly.",
-	"Put it on a free tile: it waters the 8 tiles around it every morning. E picks it up again.",
-]
 
+# --- Pages and selection ------------------------------------------------------
 
-func _show_tab(tab: int) -> void:
-	_tab = tab
-	_entries = _collect(tab)
-	_selected = 0
-	_page = 0
+## Fills the right side with a page's groups: a title and a grid of slots for each.
+func _show_page(page: int) -> void:
+	_page = page
 	for i in _tab_buttons.size():
-		var active := i == tab
+		var active := i == page
 		_tab_buttons[i].add_theme_stylebox_override("normal", _nine("dt" if active else "lt", 2, 10))
 		_tab_buttons[i].add_theme_color_override("font_color", CREAM if active else DARK_TEXT)
-	_fill_grid()
-
-
-func _fill_grid() -> void:
 	if _cursor.get_parent() != self:
 		_cursor.reparent(self, false) # don't let it be freed with the old slots
-	for child in _grid.get_children():
-		_grid.remove_child(child)
+	for child in _groups.get_children():
+		_groups.remove_child(child)
 		child.queue_free()
-	var per_page := COLUMNS * ROWS
-	var pages := maxi(1, ceili(_entries.size() / float(per_page)))
-	_page = clampi(_page, 0, pages - 1)
-	for i in per_page:
-		var index := _page * per_page + i
-		_grid.add_child(_make_slot(_entries[index] if index < _entries.size() else {}, index))
-	_page_label.text = "%d/%d" % [_page + 1, pages]
-	_arrow_left.visible = pages > 1
-	_arrow_right.visible = pages > 1
+	_entries.clear()
+	_slots.clear()
+	_rows.clear()
+	for group in _pages[page]["groups"]:
+		_groups.add_child(_label(group["title"], 16, CREAM))
+		var grid := GridContainer.new()
+		grid.columns = COLUMNS
+		grid.add_theme_constant_override("h_separation", 10)
+		grid.add_theme_constant_override("v_separation", 10)
+		_groups.add_child(grid)
+		var list: Array = group["entries"]
+		var rows := maxi(group["rows"], ceili(list.size() / float(COLUMNS)))
+		for i in rows * COLUMNS:
+			if i >= list.size():
+				grid.add_child(_make_slot({}, -1))
+				continue
+			if i % COLUMNS == 0:
+				_rows.append([])
+			var slot := _make_slot(list[i], _entries.size())
+			_rows.back().append(_entries.size())
+			_entries.append(list[i])
+			_slots.append(slot)
+			grid.add_child(slot)
+	_selected = 0
 	_update_selection()
 
 
+## Left / right: the next thing in reading order (runs on into the next group).
 func _move(step: int) -> void:
 	if _entries.is_empty():
 		return
 	_selected = clampi(_selected + step, 0, _entries.size() - 1)
-	var page := _selected / (COLUMNS * ROWS)
-	if page != _page:
-		_page = page
-		_fill_grid()
-	else:
-		_update_selection()
+	_update_selection()
 
 
-func _turn_page(step: int) -> void:
-	var per_page := COLUMNS * ROWS
-	var pages := maxi(1, ceili(_entries.size() / float(per_page)))
-	_page = wrapi(_page + step, 0, pages)
-	_selected = mini(_page * per_page, maxi(0, _entries.size() - 1))
-	_fill_grid()
+## Up / down: the same column in the row above or below (also across groups).
+func _move_row(step: int) -> void:
+	for r in _rows.size():
+		var column: int = _rows[r].find(_selected)
+		if column < 0:
+			continue
+		var target := r + step
+		if target >= 0 and target < _rows.size():
+			_selected = _rows[target][mini(column, _rows[target].size() - 1)]
+			_update_selection()
+		return
 
 
 func _update_selection() -> void:
 	var entry: Dictionary = _entries[_selected] if _selected < _entries.size() else {}
 	# Cursor brackets around the selected slot
-	var slot_index := _selected - _page * COLUMNS * ROWS
-	if entry.is_empty() or slot_index < 0 or slot_index >= _grid.get_child_count():
-		_cursor.visible = false
-	else:
-		var slot: Control = _grid.get_child(slot_index)
-		_cursor.reparent(slot, false)
+	_cursor.visible = not entry.is_empty()
+	if not entry.is_empty():
+		_cursor.reparent(_slots[_selected], false)
 		_cursor.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		_cursor.visible = true
 
 	# Info card
+	_stages.visible = false
+	_use_button.visible = false
 	if entry.is_empty():
 		_info_icon.texture = null
-		_info_name.text = "Nothing here yet"
+		_info_name.text = _pages[_page]["empty"][0]
 		_info_kind.text = ""
-		_info_text.text = "Harvest crops, catch fish\nor chop trees to fill your bag."
+		_info_text.text = _pages[_page]["empty"][1]
 		_info_count.text = ""
-		_stages.visible = false
-		_use_button.visible = false
 		return
 	_info_icon.texture = entry["icon"]
 	_info_name.text = entry["name"]
@@ -305,26 +315,19 @@ func _update_selection() -> void:
 		for i in 3:
 			var stage := _stages.get_node("StageBox%d/Stage" % i) as TextureRect
 			stage.texture = Farm.crop_texture(crop, [0, 2, Farm.RIPE][i])
-	_use_button.visible = entry.has("seed") or entry.has("tool")
-	if entry.has("tool"):
-		_use_button.text = "Equipped" if player.tool == entry["tool"] else "Equip"
-	elif entry.has("seed"):
-		var equipped: bool = player.tool == player.Tool.SEEDS \
+	_use_button.visible = entry.has("seed") and player.owned_tools.has(player.Tool.SEEDS)
+	if _use_button.visible:
+		var in_hand: bool = player.tool == player.Tool.SEEDS \
 				and Farm.CROP_TYPES[player.seed_index] == entry["seed"]
-		_use_button.text = "In hand" if equipped else "Plant these"
+		_use_button.text = "In hand" if in_hand else "Plant these"
 
 
+## E on seeds: put them in your hand, ready to plant.
 func _use_selected() -> void:
-	if _selected >= _entries.size():
+	if _selected >= _entries.size() or not _use_button.visible:
 		return
-	var entry := _entries[_selected]
-	if entry.has("tool"):
-		player._select_tool(entry["tool"])
-	elif entry.has("seed"):
-		player.seed_index = Farm.CROP_TYPES.find(entry["seed"])
-		player._select_tool(player.Tool.SEEDS)
-	else:
-		return
+	player.seed_index = Farm.CROP_TYPES.find(_entries[_selected]["seed"])
+	player._select_tool(player.Tool.SEEDS)
 	player.refresh_ui()
 	_update_selection()
 
@@ -337,13 +340,13 @@ func _build_left_column() -> void:
 	column.custom_minimum_size = Vector2(320, 0)
 	_window.add_child(column)
 
-	# Header: basket icon + "Inventory"
+	# Header: basket icon + "Bag" (or the journal's)
 	var header := PanelContainer.new()
 	header.add_theme_stylebox_override("panel", _nine("lt", PIXEL, 10))
 	var header_row := HBoxContainer.new()
 	header_row.add_theme_constant_override("separation", 12)
-	header_row.add_child(_icon(load(UI + "basket.png"), 40))
-	header_row.add_child(_label("Inventory", 24, DARK_TEXT))
+	header_row.add_child(_icon(load(UI + ("search.png" if journal else "basket.png")), 40))
+	header_row.add_child(_label("Journal" if journal else "Bag", 24, DARK_TEXT))
 	header.add_child(header_row)
 	column.add_child(header)
 
@@ -362,6 +365,7 @@ func _build_left_column() -> void:
 	names.add_theme_constant_override("separation", 6)
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_info_name = _label("", 16, DARK_TEXT)
+	_info_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART # long quest and clue names
 	_info_kind = _label("", 8, SOFT_TEXT)
 	names.add_child(_info_name)
 	names.add_child(_info_kind)
@@ -405,51 +409,44 @@ func _build_left_column() -> void:
 
 
 func _build_right_column() -> void:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	_window.add_child(row)
-
-	_arrow_left = _arrow("arrow_left.png", -1)
-	row.add_child(_arrow_left)
-
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", -6) # tabs sit on the panel's edge
-	row.add_child(column)
+	_window.add_child(column)
 
-	var tabs := HBoxContainer.new()
-	tabs.add_theme_constant_override("separation", 4)
-	for i in TABS.size():
-		var tab := Button.new()
-		tab.text = TABS[i]["name"]
-		tab.icon = load(UI + TABS[i]["icon"])
-		tab.focus_mode = Control.FOCUS_NONE
-		tab.add_theme_font_size_override("font_size", 16)
-		tab.add_theme_stylebox_override("hover", _nine("dt", 2, 10))
-		tab.add_theme_stylebox_override("pressed", _nine("dt", 2, 10))
-		tab.add_theme_color_override("font_hover_color", CREAM)
-		tab.pressed.connect(_show_tab.bind(i))
-		tabs.add_child(tab)
-		_tab_buttons.append(tab)
-	column.add_child(tabs)
+	if _pages.size() > 1: # the journal's pages
+		var tabs := HBoxContainer.new()
+		tabs.add_theme_constant_override("separation", 4)
+		for i in _pages.size():
+			var tab := Button.new()
+			tab.text = _pages[i]["name"]
+			tab.icon = load(UI + _pages[i]["icon"])
+			tab.focus_mode = Control.FOCUS_NONE
+			tab.add_theme_font_size_override("font_size", 16)
+			tab.add_theme_stylebox_override("hover", _nine("dt", 2, 10))
+			tab.add_theme_stylebox_override("pressed", _nine("dt", 2, 10))
+			tab.add_theme_color_override("font_hover_color", CREAM)
+			tab.pressed.connect(_show_page.bind(i))
+			tabs.add_child(tab)
+			_tab_buttons.append(tab)
+		column.add_child(tabs)
 
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", _nine("dt", PIXEL, 18))
 	column.add_child(panel)
 	var inside := VBoxContainer.new()
+	inside.add_theme_constant_override("separation", 10)
 	panel.add_child(inside)
-	_grid = GridContainer.new()
-	_grid.columns = COLUMNS
-	_grid.add_theme_constant_override("h_separation", 10)
-	_grid.add_theme_constant_override("v_separation", 10)
-	inside.add_child(_grid)
-	_page_label = _label("1/1", 16, CREAM)
-	_page_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	inside.add_child(_page_label)
-
-	_arrow_right = _arrow("arrow_right.png", 1)
-	row.add_child(_arrow_right)
+	_groups = VBoxContainer.new()
+	_groups.add_theme_constant_override("separation", 8)
+	inside.add_child(_groups)
+	var keys := "Q  next page      J / Esc  close" if journal else "E  plant the selected seeds      I / Esc  close"
+	var hint := _label(keys, 8, CREAM)
+	hint.modulate.a = 0.7
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	inside.add_child(hint)
 
 
+## index = the slot's place in _entries (-1 for an empty slot).
 func _make_slot(entry: Dictionary, index: int) -> Control:
 	var slot := Button.new()
 	slot.custom_minimum_size = Vector2(SLOT, SLOT)
@@ -504,18 +501,6 @@ func _build_cursor() -> void:
 	_cursor = SelectCursor.new()
 	_cursor.visible = false
 	add_child(_cursor)
-
-
-func _arrow(file: String, step: int) -> TextureButton:
-	var button := TextureButton.new()
-	button.texture_normal = load(UI + file)
-	button.ignore_texture_size = true
-	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-	button.custom_minimum_size = Vector2(36, 36)
-	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	button.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	button.pressed.connect(_turn_page.bind(step))
-	return button
 
 
 func _icon(texture: Texture2D, size: int) -> TextureRect:

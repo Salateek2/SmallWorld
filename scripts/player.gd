@@ -3,8 +3,9 @@ extends CharacterBody2D
 ## Builds the layered Sunnyside character (body + hair + tools), a collision
 ## shape, a following camera and a small HUD from code.
 ## E / Space: pick a ripe crop in front of you, otherwise use the selected tool.
-## 1-7 pick a tool (axe, hoe, seeds, watering can, sword, fishing rod, sprinkler), Q cycles.
-## Press 3 again to change the seed type.
+## The hotbar shows the tools you have; the number keys pick them by their place on it, Q cycles.
+## With the seeds in hand, a row of the seeds you own shows above the bar; press the seeds key
+## again to move to the next kind.
 ## Harvesting gives farming XP: each farming level unlocks new seeds, animals and things at Gus's.
 ## E at the crate by your door opens the shipping bin (sold overnight).
 ## Fishing: face water, press E to cast, wait for the "!" and press E quickly to reel in.
@@ -14,7 +15,7 @@ extends CharacterBody2D
 ## A little "E" prompt pops up over whatever E would use (someone to talk to, a seat...),
 ## and one-time tips (tips.gd) explain the controls as you need them.
 ## E at the market counter opens the shop; E next to your bed sleeps until morning.
-## I or Tab opens the inventory. E next to a villager talks to them. Esc pauses.
+## I or Tab opens the bag, J the journal (people, clues, quests). E next to a villager talks to them. Esc pauses.
 ## Walk into water to swim (no tools while swimming).
 
 enum Hair { NONE, BOWL, CURLY, LONG, MOP, SHORT, SPIKEY }
@@ -71,6 +72,10 @@ const TOOL_NAMES := {
 	Tool.AXE: "Axe", Tool.HOE: "Hoe", Tool.SEEDS: "Seeds", Tool.WATER: "Watering can",
 	Tool.SWORD: "Sword", Tool.ROD: "Fishing rod", Tool.SPRINKLER: "Sprinkler",
 }
+const TOOL_HINTS := { # what the label over the hotbar says about the tool in your hand
+	Tool.AXE: "chops pine trees", Tool.HOE: "digs soil for seeds", Tool.WATER: "crops grow in wet soil",
+	Tool.SWORD: "slashes flowers and bushes", Tool.ROD: "cast into water, press E on the !",
+}
 const TOOL_ICONS := {
 	Tool.AXE: "axe.png", Tool.HOE: "shovel.png", Tool.WATER: "water.png", Tool.SWORD: "sword.png",
 	Tool.ROD: "rod.png",
@@ -125,6 +130,8 @@ var _hit_done := false # the current attack already landed
 var _hotbar_slots: Array[PanelContainer] = []
 var _hotbar_cursor: Control # gold corner brackets on the selected tool
 var _tool_label: Label
+var _seed_bar: PanelContainer # the seeds you own, above the hotbar while seeds are in your hand
+var _seed_row: HBoxContainer
 var _camera: Camera2D
 var _location_label: Label
 var _location := "" # name of the place we're in, for the banner
@@ -198,6 +205,9 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("inventory") and not _busy and _fishing == Fishing.NONE:
 		_open_menu("res://scripts/inventory.gd")
+		return
+	if Input.is_action_just_pressed("journal") and not _busy and _fishing == Fishing.NONE:
+		_open_menu("res://scripts/inventory.gd", {"journal": true})
 		return
 	if Input.is_action_just_pressed("ui_cancel") and not _busy and _fishing == Fishing.NONE:
 		_open_menu("res://scripts/pause_menu.gd")
@@ -991,17 +1001,30 @@ func _update_aim_highlight() -> void:
 
 # --- Tools / hotbar --------------------------------------------------------
 
+## The number keys follow the bar: 1 is the first tool on it, 2 the second... Q picks the next.
 func _handle_tool_keys() -> void:
-	for i in Tool.size():
+	var shown := _shown_tools()
+	for i in shown.size():
 		if Input.is_action_just_pressed("tool_%d" % (i + 1)):
-			if i == Tool.SEEDS and tool == Tool.SEEDS:
+			if shown[i] == Tool.SEEDS and tool == Tool.SEEDS:
 				_next_seed_type()
-			_select_tool(i)
-	if Input.is_action_just_pressed("next_tool"):
-		_select_tool((tool + 1) % Tool.size())
+			_select_tool(shown[i])
+			return
+	if Input.is_action_just_pressed("next_tool") and not shown.is_empty():
+		_select_tool(shown[(shown.find(tool) + 1) % shown.size()])
 
 
-## Pressing 3 again: switch to the next seed type you have seeds for.
+## The tools on the hotbar, in order: only the ones you have.
+func _shown_tools() -> Array:
+	return range(Tool.size()).filter(func(t): return owned_tools.has(t))
+
+
+## The seeds in your bag, in shop order (the row above the hotbar shows these).
+func _owned_seeds() -> Array:
+	return Farm.CROP_TYPES.filter(func(crop): return seeds.get(crop, 0) > 0)
+
+
+## Pressing the seeds key again: switch to the next seed type you have seeds for.
 func _next_seed_type() -> void:
 	for step in range(1, Farm.CROP_TYPES.size() + 1):
 		var next := (seed_index + step) % Farm.CROP_TYPES.size()
@@ -1221,20 +1244,6 @@ func _build_hud() -> void:
 	tips.set("player", self)
 	add_child(tips)
 
-	_toast = Label.new()
-	_toast.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	_toast.offset_left = -300
-	_toast.offset_right = 300
-	_toast.offset_top = -150
-	_toast.offset_bottom = -120
-	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_toast.add_theme_font_size_override("font_size", 16)
-	_toast.add_theme_color_override("font_color", Color(1, 0.95, 0.75))
-	_toast.add_theme_color_override("font_outline_color", Color.BLACK)
-	_toast.add_theme_constant_override("outline_size", 6)
-	_toast.modulate.a = 0.0
-	hud.add_child(_toast)
-
 	_above_head = Sprite2D.new()
 	_above_head.position = Vector2(0, -18)
 	_above_head.visible = false
@@ -1308,6 +1317,16 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 	column.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	hud.add_child(column)
 
+	# Short messages ("It got away...") sit on top of the column, clear of everything below
+	_toast = Label.new()
+	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast.add_theme_font_size_override("font_size", 16)
+	_toast.add_theme_color_override("font_color", Color(1, 0.95, 0.75))
+	_toast.add_theme_color_override("font_outline_color", Color.BLACK)
+	_toast.add_theme_constant_override("outline_size", 6)
+	_toast.modulate.a = 0.0
+	column.add_child(_toast)
+
 	_tool_label = Label.new()
 	_tool_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_tool_label.add_theme_font_size_override("font_size", 16)
@@ -1315,13 +1334,23 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 	_tool_label.add_theme_constant_override("outline_size", 6)
 	column.add_child(_tool_label)
 
+	# The seeds you own, shown only while the seeds are in your hand
+	_seed_bar = PanelContainer.new()
+	_seed_bar.add_theme_stylebox_override("panel", UIStyle.nine("dt", 2, 8))
+	_seed_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_seed_bar.visible = false
+	column.add_child(_seed_bar)
+	_seed_row = HBoxContainer.new()
+	_seed_row.add_theme_constant_override("separation", 6)
+	_seed_bar.add_child(_seed_row)
+
 	var bar := PanelContainer.new()
 	bar.add_theme_stylebox_override("panel", UIStyle.nine("dt", 3, 10))
 	bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	column.add_child(bar)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 6) # 7 slots: keep clear of the tips box
+	row.add_theme_constant_override("separation", 6)
 	bar.add_child(row)
 	for i in Tool.size():
 		var slot := PanelContainer.new()
@@ -1335,7 +1364,7 @@ func _build_hotbar(hud: CanvasLayer) -> void:
 		icon.texture = tool_icon(i)
 		slot.add_child(icon)
 		var number := Label.new()
-		number.text = str(i + 1)
+		number.name = "Number" # the key that picks it: its place on the bar (see _update_hotbar)
 		number.add_theme_font_size_override("font_size", 8)
 		number.add_theme_color_override("font_color", Color(0.24, 0.16, 0.12))
 		number.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -1355,31 +1384,79 @@ func tool_icon(t: int) -> Texture2D:
 	return load(UI_DIR + TOOL_ICONS[t]) if TOOL_ICONS.has(t) else null
 
 
+## The bar shows only the tools you have, numbered by their place on it.
 func _update_hotbar() -> void:
+	var shown := _shown_tools()
+	if not shown.has(tool) and not shown.is_empty():
+		tool = shown[0] # never hold something that isn't on the bar
+	if seeds.get(Farm.CROP_TYPES[seed_index], 0) <= 0:
+		_next_seed_type() # out of these: show seeds you do have
 	var seed_type: String = Farm.CROP_TYPES[seed_index]
 	var seed_count: int = seeds.get(seed_type, 0)
+	for t in Tool.size():
+		_hotbar_slots[t].visible = shown.has(t)
+		_hotbar_slots[t].get_node("Number").text = str(shown.find(t) + 1)
 	# The seeds slot shows the crop it grows into
 	var seed_icon := _hotbar_slots[Tool.SEEDS].get_node("Icon") as TextureRect
 	seed_icon.texture = Farm.crop_texture(seed_type, Farm.STAGES)
 	seed_icon.modulate.a = 1.0 if seed_count > 0 else 0.35 # faded when you have none
-	for t in Tool.size():
-		if t != Tool.SEEDS:
-			_hotbar_slots[t].get_node("Icon").modulate.a = 1.0 if owned_tools.has(t) else 0.25
 	if _hotbar_cursor.get_parent() != _hotbar_slots[tool]:
 		_hotbar_cursor.reparent(_hotbar_slots[tool], false)
+	_update_seed_bar()
 	if tool == Tool.SEEDS:
-		if seed_count > 0:
-			_tool_label.text = "%s seeds x%d  (press 3 to change)" % [seed_type.capitalize(), seed_count]
+		if seed_count <= 0:
+			_tool_label.text = "No seeds - buy some at the market"
+		elif _owned_seeds().size() > 1:
+			_tool_label.text = "%s seeds x%d  (press %d for the next)" % [
+					seed_type.capitalize(), seed_count, shown.find(Tool.SEEDS) + 1]
 		else:
-			_tool_label.text = "%s seeds x0 - buy some at the market  (press 3 to change)" % seed_type.capitalize()
-	elif not owned_tools.has(tool):
-		_tool_label.text = "%s - %s" % [TOOL_NAMES[tool], TOOL_SOURCES.get(tool, "not yours yet")]
+			_tool_label.text = "%s seeds x%d" % [seed_type.capitalize(), seed_count]
 	elif tool == Tool.SPRINKLER:
 		_tool_label.text = "Sprinkler x%d  (waters the 8 tiles around it)" % sprinklers
 	elif upgrades.has(tool):
 		_tool_label.text = "Copper %s  (3 tiles)" % TOOL_NAMES[tool].to_lower()
 	else:
-		_tool_label.text = TOOL_NAMES[tool]
+		_tool_label.text = "%s  (%s)" % [TOOL_NAMES[tool], TOOL_HINTS[tool]] if TOOL_HINTS.has(tool) else TOOL_NAMES[tool]
+
+
+## The row above the hotbar: one small slot for each kind of seed you own, with the
+## one in your hand marked. Only there while the seeds are selected.
+func _update_seed_bar() -> void:
+	for child in _seed_row.get_children():
+		_seed_row.remove_child(child)
+		child.queue_free()
+	var mine := _owned_seeds()
+	_seed_bar.visible = tool == Tool.SEEDS and not mine.is_empty()
+	if not _seed_bar.visible:
+		return
+	for crop in mine:
+		var slot := PanelContainer.new()
+		slot.custom_minimum_size = Vector2(44, 44)
+		slot.add_theme_stylebox_override("panel", UIStyle.nine("lt", 2, 6))
+		var icon := TextureRect.new()
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		icon.texture = Farm.crop_texture(crop, Farm.STAGES)
+		slot.add_child(icon)
+		var count := Label.new()
+		count.text = str(seeds[crop])
+		count.add_theme_font_size_override("font_size", 8)
+		count.add_theme_color_override("font_color", Color.WHITE)
+		count.add_theme_color_override("font_outline_color", Color(0.24, 0.16, 0.12))
+		count.add_theme_constant_override("outline_size", 4)
+		count.size_flags_horizontal = Control.SIZE_SHRINK_END
+		count.size_flags_vertical = Control.SIZE_SHRINK_END
+		slot.add_child(count)
+		if crop == Farm.CROP_TYPES[seed_index]:
+			var cursor := SelectCursor.new()
+			cursor.pixel_scale = 2
+			cursor.outset = 9 # the slot's 6 px padding + 3 px outside its edge
+			cursor.bounce = 2.0
+			slot.add_child(cursor)
+		else:
+			slot.modulate = Color(1, 1, 1, 0.7)
+		_seed_row.add_child(slot)
 
 
 ## Gives you a tool (bought from a shop) and puts it in your hand.

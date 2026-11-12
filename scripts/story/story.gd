@@ -296,7 +296,7 @@ func run(dialogue_key: String) -> void:
 			"clue": # "clue:locket" = a new page in the journal
 				if not clues.has(parts[1]):
 					clues.append(parts[1])
-					_notify("New clue in your journal: " + Text.CLUES[parts[1]]["title"])
+					_notify("New clue in your journal (J): " + Text.CLUES[parts[1]]["title"])
 			"chapter": # "chapter:1" = the chapter is over: a big banner
 				if player and player.has_method("show_big_message"):
 					player.show_big_message(Text.CHAPTERS[parts[1]])

@@ -19,6 +19,7 @@ const KEYS := {
 	"tool_7": [KEY_7, KEY_KP_7],
 	"next_tool": [KEY_Q],
 	"inventory": [KEY_I, KEY_TAB],
+	"journal": [KEY_J],
 	"zoom_in": [KEY_EQUAL, KEY_KP_ADD],
 	"zoom_out": [KEY_MINUS, KEY_KP_SUBTRACT],
 }

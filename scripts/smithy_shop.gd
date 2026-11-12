@@ -22,7 +22,7 @@ const WARES := [
 	{"name": "Copper Watering Can", "icon": "water.png", "price": 220, "upgrade": 3, "level": 3, # Tool.WATER
 		"text": "Waters three tiles in a row at once."},
 	{"name": "Sprinkler", "icon": Farm.SPRINKLER_ICON, "price": 120, "sprinkler": true, "level": 4,
-		"text": "Waters the 8 tiles around it every morning. Key 7 to place."},
+		"text": "Waters the 8 tiles around it every morning. Pick it on your tool bar to place."},
 	{"name": "Iron Sword", "icon": "sword.png", "price": 60, "tool": 4, # Tool.SWORD
 		"text": "Slashes bushes and flowers, and keeps goblins at bay."},
 	{"name": "Pickaxe", "icon": "pickaxe.png", "price": 0, "tool": -1,

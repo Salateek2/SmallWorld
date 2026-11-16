@@ -121,7 +121,7 @@ func _bag_pages() -> Array:
 		if player.crops.get(item, 0) > 0:
 			var info: Dictionary = OTHER_ITEMS[item]
 			harvest.append({"name": item.capitalize(), "kind": info["kind"], "count": player.crops[item],
-				"icon": load(CROPS + item + ".png"), "text": info["text"]})
+				"icon": Farm.item_icon(item), "text": info["text"]})
 	if player.wood > 0:
 		harvest.append({"name": "Wood", "kind": "Material", "count": player.wood,
 			"icon": load(CROPS + "wood.png"), "text": "From chopping pine trees. Good for building."})
@@ -134,7 +134,7 @@ func _bag_pages() -> Array:
 				"icon": Farm.crop_texture(crop, 0), "seed": crop,
 				"text": "Plant on dug soil and keep it watered.\nRipe in %d hours." % data["hours"]})
 	return [{"name": "Bag", "icon": "basket.png",
-		"empty": ["Nothing here yet", "Harvest crops, catch fish\nor chop trees to fill your bag."],
+		"empty": ["Nothing here yet", "Harvest crops, catch fish, chop trees\nor pick what grows wild to fill your bag."],
 		"groups": [
 			{"title": "Harvest", "rows": 2, "entries": harvest},
 			{"title": "Seeds", "rows": 2, "entries": seeds},
@@ -221,6 +221,10 @@ const OTHER_ITEMS := {
 	"fish": {"kind": "Catch", "text": "Fresh from the water. Sells for 5c."},
 	"egg": {"kind": "Animal product", "text": "Laid by a well-fed chicken. Sells for 12c."},
 	"milk": {"kind": "Animal product", "text": "From a well-fed cow. Sells for 30c."},
+	"mushroom": {"kind": "Foraged", "text": "Grows in the shade of the pines.\nBack a couple of days after you pick it. Sells for 9c."},
+	"berry": {"kind": "Foraged", "text": "From the red-dotted bushes.\nSweet and a bit sour. Sells for 4c."},
+	"orange": {"kind": "Foraged", "text": "From the orange bushes.\nSmells like summer. Sells for 5c."},
+	"shell": {"kind": "Foraged", "text": "The tide leaves a few on the beach\nevery morning. Sells for 14c."},
 }
 
 

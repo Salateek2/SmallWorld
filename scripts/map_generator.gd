@@ -469,6 +469,7 @@ func _ready() -> void:
 	_spawn_pasture_animals()
 	_spawn_shipping_bin()
 	_spawn_clock()
+	_spawn_forage() # after the clock: things grow back as the days pass
 	_spawn_merchant()
 	_spawn_story_characters()
 	_build_tavern() # after Isla, so the bar is drawn in front of her
@@ -3186,6 +3187,17 @@ func _spawn_farm() -> void:
 	var player := get_node_or_null("Player")
 	if player:
 		move_child(farm, player.get_index()) # soil and crops draw under the player
+
+
+## Mushrooms, fruit bushes and seashells you can pick (see forage.gd).
+func _spawn_forage() -> void:
+	var forage := Node2D.new()
+	forage.set_script(load("res://scripts/forage.gd"))
+	forage.name = "Forage"
+	add_child(forage)
+	var player := get_node_or_null("Player")
+	if player:
+		move_child(forage, player.get_index()) # shells lie under the player
 
 
 ## The map's area in world pixels.

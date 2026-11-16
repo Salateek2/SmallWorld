@@ -9,6 +9,7 @@ extends CharacterBody2D
 ## Harvesting gives farming XP: each farming level unlocks new seeds, animals and things at Gus's.
 ## E at the crate by your door opens the shipping bin (sold overnight).
 ## Fishing: face water, press E to cast, wait for the "!" and press E quickly to reel in.
+## Foraging: E next to a mushroom, a fruit bush or a seashell picks it (see forage.gd).
 ## Tools always work on the tile in front of the character (left or right, the way it faces).
 ## Mouse wheel or +/- zooms the camera in and out.
 ## Keep walking and you break into a run by yourself (Shift runs straight away).
@@ -167,6 +168,7 @@ var _xp_fill: ColorRect # the gold part of the XP bar
 var _shown_coins := 0.0 # the HUD counts up/down to your real coins
 var _talking_to: Node2D # the villager we're chatting with (they stand still meanwhile)
 var _step_time := 0.0 # until the next puff of dust (running) or splash (swimming)
+var _forage_target := {} # the wild thing the hand is reaching for (from Forage.target_near)
 
 
 func _ready() -> void:
@@ -237,6 +239,7 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("use"):
 		var farm := _farm()
+		_forage_target = {}
 		if _swimming:
 			notify("You can't use that while swimming")
 		elif world.has_method("is_near_market") and world.is_near_market(global_position):
@@ -251,6 +254,9 @@ func _physics_process(delta: float) -> void:
 			_open_menu("res://scripts/shipping_menu.gd")
 		elif world.has_node("Ranch") and world.get_node("Ranch").interact(self):
 			pass # fed the animals or milked a cow
+		elif not forage_in_reach().is_empty():
+			_forage_target = forage_in_reach()
+			_start_action("doing") # bare hands: no tool needed
 		elif not owned_tools.has(tool):
 			notify("No %s yet - %s" % [TOOL_NAMES[tool].to_lower(), TOOL_SOURCES.get(tool, "")])
 		elif tool == Tool.ROD:
@@ -327,6 +333,9 @@ func use_target() -> Dictionary:
 		var ranch_target: Dictionary = world.get_node("Ranch").interact_target(self)
 		if not ranch_target.is_empty():
 			return ranch_target
+	var wild := forage_in_reach()
+	if not wild.is_empty():
+		return wild
 	var farm := _farm()
 	if owned_tools.has(tool) and tool != Tool.SWORD and tool != Tool.ROD and farm and farm.is_ripe(_aim_point()):
 		return {"text": "Harvest", "at": _aim_point()}
@@ -582,6 +591,10 @@ func _chop() -> void:
 
 
 func _harvest_or_plant() -> void:
+	if not _forage_target.is_empty():
+		_pick_wild(_forage_target)
+		_forage_target = {}
+		return
 	var farm := _farm()
 	if farm == null:
 		return
@@ -618,6 +631,36 @@ func _harvest_or_plant() -> void:
 		else:
 			notify("A sprinkler needs a free tile")
 		_update_hotbar()
+
+
+# --- Foraging -----------------------------------------------------------------
+
+## The mushroom, fruit bush or seashell within reach ({} if there's none): see forage.gd.
+func forage_in_reach() -> Dictionary:
+	var forage := get_parent().get_node_or_null("Forage")
+	return forage.target_near(global_position, _facing) if forage else {}
+
+
+## The hand reached it: a mushroom or shell goes straight into your pocket,
+## fruit tumbles out of the bush for you to gather.
+func _pick_wild(target: Dictionary) -> void:
+	var forage := get_parent().get_node_or_null("Forage")
+	var count: int = forage.pick(target) if forage else 0
+	if count <= 0:
+		return
+	var item: String = target["kind"]
+	var at: Vector2 = target["at"]
+	var icon := Farm.item_icon(item)
+	if count > 1:
+		get_parent().drop_items(at, item, icon, count, Vector2(14, 24))
+		Juice.puff(at, Juice.LEAF, 12, 40.0)
+		Juice.shake(0.6)
+		Juice.sound("chop", 1.5)
+	else:
+		Juice.toss(icon, at + Vector2(0, -4), self)
+		if item != "shell":
+			Juice.puff(at, Juice.LEAF, 5)
+		add_item(item, count)
 
 
 # --- Farming level ------------------------------------------------------------

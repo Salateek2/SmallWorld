@@ -17,6 +17,7 @@ const TIPS := [
 	["tools", "Pick a tool with the number keys (or Q),\nthen press E to use it."],
 	["grow", "Crops only grow in wet (dark) soil. Face one to see\nhow long it needs. Soil dries after a few hours."],
 	["bag", "Press I (or Tab) to open your bag.\nPress J for your journal: people, clues and quests."],
+	["forage", "Mushrooms, fruit bushes and seashells can be picked\nwith E. They come back after a few days."],
 	["friends", "Chat with people every day and bring them\npresents to become friends."],
 	["night", "It's getting late! Sleep in your bed to start\na new day. The game saves every morning."],
 ]
@@ -82,6 +83,8 @@ func _ready_to_show(id: String) -> bool:
 			return farm != null and farm.has_crops()
 		"bag":
 			return player.wood > 0 or not player.crops.is_empty()
+		"forage":
+			return not player.forage_in_reach().is_empty()
 		"friends":
 			return not Story.friendship.is_empty()
 		"night":

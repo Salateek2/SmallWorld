@@ -11,6 +11,7 @@ extends Node2D
 ## crop prices, what unlocks at which farming level, and how much XP a level takes.
 
 const CROPS_DIR := "res://assets/Sunnyside_World_Assets/Elements/Crops/"
+const FORAGE_DIR := "res://assets/forage/" # made by tools/make_forage.py
 const SPRINKLER_ICON := "res://assets/farm/sprinkler.png" # made by tools/make_sprinkler.py
 ## Crops the player can plant, in hotbar/shop order (the order you unlock them in)
 const CROP_TYPES: Array[String] = ["carrot", "wheat", "radish", "potato", "parsnip", "cabbage",
@@ -37,6 +38,11 @@ const OTHER_ITEMS := {
 	"fish": {"sell": 5, "xp": 1},
 	"egg": {"sell": 12, "xp": 3},
 	"milk": {"sell": 30, "xp": 6},
+	# foraged (see forage.gd); their icons are in assets/forage
+	"mushroom": {"sell": 9, "xp": 1, "icon": FORAGE_DIR + "mushroom.png"},
+	"berry": {"sell": 4, "xp": 1, "icon": FORAGE_DIR + "berry.png"},
+	"orange": {"sell": 5, "xp": 1, "icon": FORAGE_DIR + "orange.png"},
+	"shell": {"sell": 14, "xp": 1, "icon": FORAGE_DIR + "shell.png"},
 }
 ## Total XP needed to reach each farming level: LEVEL_XP[0] is level 1, [1] is level 2...
 const LEVEL_XP: Array[int] = [0, 30, 100, 220, 400, 650, 1000, 1500, 2200, 3000]
@@ -137,6 +143,11 @@ func status_at(world_pos: Vector2) -> String:
 ## How many crops are planted and have been watered (for Hazel's first lesson).
 func count_growing() -> int:
 	return _plots.values().filter(func(plot): return plot.crop != null and (plot.wet or plot.grown > 0)).size()
+
+
+## True if that tile is soil or has a sprinkler on it.
+func has_plot(cell: Vector2i) -> bool:
+	return _plots.has(cell) or _sprinklers.has(cell)
 
 
 func has_crops() -> bool:
@@ -339,13 +350,15 @@ static func crop_texture(crop_type: String, stage: int) -> Texture2D:
 	return load(CROPS_DIR + "%s_%02d.png" % [crop_type, stage])
 
 
-## What one of these sells for (crops, fish, eggs, milk).
+## What one of these sells for (crops, fish, eggs, milk, foraged things).
 static func item_price(item: String) -> int:
 	return OTHER_ITEMS[item]["sell"] if OTHER_ITEMS.has(item) else CROP_DATA[item]["sell"]
 
 
 static func item_icon(item: String) -> Texture2D:
-	return load(CROPS_DIR + item + ".png") if OTHER_ITEMS.has(item) else crop_texture(item, STAGES)
+	if OTHER_ITEMS.has(item):
+		return load(OTHER_ITEMS[item].get("icon", CROPS_DIR + item + ".png"))
+	return crop_texture(item, STAGES)
 
 
 ## Farming XP for harvesting / collecting one (0 for things like wood).

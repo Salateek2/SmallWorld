@@ -31,6 +31,7 @@ func save_game() -> bool:
 		"story": Story.get_state(),
 		"ranch": world.get_node("Ranch").get_state() if world.has_node("Ranch") else [],
 		"bin": world.get_node("ShippingBin").get_state() if world.has_node("ShippingBin") else {},
+		"forage": world.get_node("Forage").get_state() if world.has_node("Forage") else {},
 	}
 	var file := FileAccess.open(PATH, FileAccess.WRITE)
 	if file == null:
@@ -60,6 +61,8 @@ func apply(world: Node) -> void:
 		world.get_node("Ranch").set_state(data.get("ranch", []))
 	if world.has_node("ShippingBin"):
 		world.get_node("ShippingBin").set_state(data.get("bin", {}))
+	if world.has_node("Forage") and data.has("forage"): # (older saves: everything is still unpicked)
+		world.get_node("Forage").set_state(data["forage"])
 	world.get_node("Player").set_state(data["player"])
 
 

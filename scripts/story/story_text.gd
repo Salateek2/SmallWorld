@@ -95,15 +95,16 @@ const ABOUT := {
 }
 
 ## Presents: what each villager loves, likes and can't stand (everything else is fine).
-## Items: carrot, wheat, potato, cabbage, sunflower, pumpkin, fish, egg, milk, wood.
+## Items: carrot, wheat, potato, cabbage, sunflower, pumpkin, fish, egg, milk, wood,
+## and the foraged ones: mushroom, berry, orange, shell.
 const GIFTS := {
-	"isla": {"love": ["milk", "pumpkin"], "like": ["egg", "sunflower", "fish"], "dislike": ["wood", "wheat"]},
-	"tom": {"love": ["fish"], "like": ["egg", "potato"], "dislike": ["sunflower"]},
-	"pip": {"love": ["sunflower", "pumpkin"], "like": ["carrot", "egg"], "dislike": ["cabbage"]},
-	"hazel": {"love": ["carrot", "milk"], "like": ["potato", "wheat"], "dislike": ["fish"]},
-	"bram": {"love": ["egg"], "like": ["potato", "wheat", "milk"], "dislike": ["wood"]},
-	"lily": {"love": ["sunflower"], "like": ["cabbage", "carrot"], "dislike": ["fish"]},
-	"rosa": {"love": ["pumpkin", "milk"], "like": ["egg", "wheat"], "dislike": ["wood"]},
+	"isla": {"love": ["milk", "pumpkin"], "like": ["egg", "sunflower", "fish", "orange"], "dislike": ["wood", "wheat", "mushroom"]},
+	"tom": {"love": ["fish"], "like": ["egg", "potato", "mushroom"], "dislike": ["sunflower"]},
+	"pip": {"love": ["sunflower", "pumpkin", "berry"], "like": ["carrot", "egg", "orange", "shell"], "dislike": ["cabbage"]},
+	"hazel": {"love": ["carrot", "milk"], "like": ["potato", "wheat", "mushroom"], "dislike": ["fish", "shell"]},
+	"bram": {"love": ["egg", "mushroom"], "like": ["potato", "wheat", "milk", "berry"], "dislike": ["wood"]},
+	"lily": {"love": ["sunflower", "shell"], "like": ["cabbage", "carrot", "berry"], "dislike": ["fish"]},
+	"rosa": {"love": ["pumpkin", "milk"], "like": ["egg", "wheat", "orange", "shell"], "dislike": ["wood"]},
 }
 
 ## What they say when you offer a present (before you pick one)
